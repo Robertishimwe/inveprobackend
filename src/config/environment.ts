@@ -1,86 +1,3 @@
-// // src/config/environment.ts
-// import dotenv from 'dotenv';
-// import path from 'path';
-// import { z } from 'zod';
-// import logger from '@/utils/logger'; // Use logger for potential warnings/errors
-
-// // Determine which .env file to load based on NODE_ENV
-// // Defaults to '.env' if NODE_ENV is not 'test' or 'production' etc.
-// const envFile = process.env.NODE_ENV === 'test' ? '.env.test' : '.env';
-// const envPath = path.resolve(process.cwd(), envFile);
-
-// // Load environment variables from the determined file path
-// const loadEnvResult = dotenv.config({ path: envPath });
-
-// if (loadEnvResult.error) {
-//   // Only treat missing .env as critical if not in production/test (where env vars might be injected)
-//   if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
-//     logger.warn(`⚠️ Could not find ${envFile} file. Relying on system environment variables.`);
-//   }
-//   // If parsing failed for an existing file, log the error
-//   if (loadEnvResult.error.message.includes('Failed to load')) {
-//     logger.error(`❌ Error loading ${envFile}: ${loadEnvResult.error.message}`);
-//   }
-// }
-
-// // Define the schema for environment variables using Zod
-// const envSchema = z.object({
-//   // Node Environment
-//   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-
-//   // Server Configuration
-//   PORT: z.coerce.number().int().positive().default(5000), // Coerce string to number, ensure integer > 0
-
-//   // Database Configuration (using connection string)
-//   DATABASE_URL: z.string().url({ message: "DATABASE_URL must be a valid PostgreSQL connection string URL" }),
-
-//   // Redis Configuration
-//   REDIS_URL: z.string().url({ message: "REDIS_URL must be a valid Redis connection string URL" }),
-
-//   // JWT Configuration
-//   JWT_SECRET: z.string().min(32, { message: "JWT_SECRET must be at least 32 characters long for security" }),
-//   JWT_EXPIRES_IN: z.string().nonempty({ message: "JWT_EXPIRES_IN (e.g., '1d', '2h') cannot be empty" }).default('1d'),
-//   // Optional: Refresh token configuration
-//   // JWT_REFRESH_SECRET: z.string().min(32),
-//   // JWT_REFRESH_EXPIRES_IN: z.string().nonempty(),
-
-//   // CORS Configuration
-//   CORS_ORIGIN: z.string().default('*'), // Be specific in production (e.g., "https://app.example.com,https://admin.example.com")
-
-//   // Logging Configuration
-//   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']).default('info'),
-
-//   // Add other environment variables as needed (e.g., API keys, rate limits)
-//   // EXAMPLE_API_KEY: z.string().optional(),
-// });
-
-// // Validate process.env against the schema
-// const parsedEnv = envSchema.safeParse(process.env);
-
-// if (!parsedEnv.success) {
-//   // Log detailed validation errors
-//   logger.error('❌ Invalid environment variables:');
-//   // Iterate through Zod errors for better formatting
-//   parsedEnv.error.errors.forEach((err) => {
-//     logger.error(`  - ${err.path.join('.')}: ${err.message}`);
-//   });
-//   // Exit the process if validation fails, as the app cannot run correctly
-//   process.exit(1);
-// }
-
-// // Export the validated and typed environment variables
-// export const env = parsedEnv.data;
-
-// // Log loaded environment (optional, be careful not to log secrets)
-// // logger.debug('Environment variables loaded:', {
-// //   NODE_ENV: env.NODE_ENV,
-// //   PORT: env.PORT,
-// //   LOG_LEVEL: env.LOG_LEVEL,
-// //   // Avoid logging sensitive URLs or secrets here
-// // });
-
-
-// src/config/environment.ts
 import dotenv from 'dotenv';
 import path from 'path';
 import { z } from 'zod';
@@ -113,6 +30,15 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().nonempty({ message: "JWT_EXPIRES_IN (e.g., '1d', '2h') cannot be empty" }).default('1d'),
   CORS_ORIGIN: z.string().default('*'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']).default('info'),
+  JWT_REFRESH_SECRET: z.string().min(32, { message: "JWT_REFRESH_SECRET must be at least 32 characters long" }),
+  JWT_REFRESH_EXPIRES_IN_DAYS: z.coerce.number().int().positive().default(7),
+  PASSWORD_RESET_SECRET: z.string().min(32, { message: "PASSWORD_RESET_SECRET must be at least 32 characters long"}),
+  PASSWORD_RESET_EXPIRES_IN: z.string().nonempty({ message: "PASSWORD_RESET_EXPIRES_IN cannot be empty" }).default('1h'),
+  REFRESH_TOKEN_COOKIE_NAME: z.string().default('refreshToken'),
+  RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().int().positive().optional(),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().optional(),
+  FRONTEND_URL: z.string().url({ message: "FRONTEND_URL must be a valid URL" }).default('http://localhost:3000'),
+  EMAIL_FROM_ADDRESS: z.string().email(),
 });
 
 // Validate process.env against the schema

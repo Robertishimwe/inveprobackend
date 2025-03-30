@@ -12,7 +12,7 @@ import logger from '@/utils/logger';
 
 // --- Import Module Routers ---
 // These should export the configured express.Router() instance for each module
-// import authRoutes from '@/modules/auth/auth.routes';
+import authRoutes from '@/modules/auth/auth.routes';
 // import userRoutes from '@/modules/users/user.routes';
 // import productRoutes from '@/modules/products/product.routes';
 // import inventoryRoutes from '@/modules/inventory/inventory.routes';
@@ -70,9 +70,9 @@ app.get('/', (req: Request, res: Response) => {
 
 
 // Mount all module API routers under '/api/v1'
-// const apiRouter = express.Router();
+const apiRouter = express.Router();
 
-// apiRouter.use('/auth', authRoutes);
+apiRouter.use('/auth', authRoutes);
 // apiRouter.use('/users', userRoutes);
 // apiRouter.use('/products', productRoutes);
 // apiRouter.use('/inventory', inventoryRoutes);
