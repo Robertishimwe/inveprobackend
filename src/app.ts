@@ -15,11 +15,12 @@ import logger from '@/utils/logger';
 import authRoutes from '@/modules/auth/auth.routes';
 import userRoutes from '@/modules/users/user.routes';
 import productRoutes from '@/modules/products/product.routes';
-// import inventoryRoutes from '@/modules/inventory/inventory.routes';
+import inventoryRoutes from '@/modules/inventory/inventory.routes';
 // import orderRoutes from '@/modules/orders/order.routes';
 // import posRoutes from '@/modules/pos/pos.routes';
 // import customerRoutes from '@/modules/customers/customer.routes';
 // import supplierRoutes from '@/modules/suppliers/supplier.routes';
+import locationRoutes from '@/modules/location/location.routes';
 // Add imports for any other modules (e.g., categories, locations, reporting)
 
 const app: Express = express();
@@ -75,13 +76,13 @@ const apiRouter = express.Router();
 apiRouter.use('/auth', authRoutes);
 apiRouter.use('/users', userRoutes);
 apiRouter.use('/products', productRoutes);
-// apiRouter.use('/inventory', inventoryRoutes);
+apiRouter.use('/inventory', inventoryRoutes);
 // apiRouter.use('/orders', orderRoutes);
 // apiRouter.use('/pos', posRoutes);
 // apiRouter.use('/customers', customerRoutes);
 // apiRouter.use('/suppliers', supplierRoutes);
 // Mount other module routers here...
-// apiRouter.use('/locations', locationRoutes);
+apiRouter.use('/locations', locationRoutes);
 // apiRouter.use('/categories', categoryRoutes);
 
 app.use('/api/v1', apiRouter);
