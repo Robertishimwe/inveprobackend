@@ -84,7 +84,7 @@ apiRouter.use('/auth', authRoutes);
 // apiRouter.use('/locations', locationRoutes);
 // apiRouter.use('/categories', categoryRoutes);
 
-// app.use('/api/v1', apiRouter);
+app.use('/api/v1', apiRouter);
 
 
 // --- 404 Handler ---

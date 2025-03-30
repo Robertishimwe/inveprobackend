@@ -1,14 +1,27 @@
 // src/modules/auth/auth.service.ts
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import ms from 'ms'; // npm i ms @types/ms
+import jwt, { SignOptions } from 'jsonwebtoken'; // Import SignOptions
+import ms from 'ms'; // Import 'ms' for time string conversion
 import httpStatus from 'http-status';
 import { prisma, env } from '@/config';
 import ApiError from '@/utils/ApiError';
 import logger from '@/utils/logger';
-import { User, RefreshToken } from '@prisma/client';
+import { User, RefreshToken, PasswordResetToken, Prisma } from '@prisma/client'; // Import Prisma namespace for TransactionClient
 import { generateSecureToken, hashToken, compareToken } from '@/utils/token.utils';
 import { emailService } from '@/utils/email.service'; // Import mock/real email service
+
+// --- Log Context Type Helper ---
+// Define a type for log contexts for consistency
+type LogContext = {
+    function?: string;
+    email?: string | null;
+    userId?: string | null;
+    tenantId?: string | null;
+    ipAddress?: string | null;
+    tokenId?: string | null; // Example for token IDs
+    error?: any; // Optional error object
+    [key: string]: any; // Allow other keys if needed
+};
 
 interface AuthTokens {
     accessToken: string;
@@ -17,23 +30,62 @@ interface AuthTokens {
 
 /**
  * Generate JWT access token.
+ * @param {User} user - The user object.
+ * @returns {string} The generated JWT access token.
  */
 const generateAccessToken = (user: User): string => {
     const payload = {
         userId: user.id,
         tenantId: user.tenantId,
-        // Consider adding a session ID or token ID if needed for granular revocation
     };
-    return jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+
+    // Convert expiresIn string from env to seconds (number)
+    let expiresInSeconds: number;
+    try {
+        const expiresInMs = ms(env.JWT_EXPIRES_IN);
+        if (typeof expiresInMs !== 'number' || isNaN(expiresInMs) || expiresInMs <= 0) {
+             throw new Error(`Invalid time string format: "${env.JWT_EXPIRES_IN}"`);
+        }
+        expiresInSeconds = Math.floor(expiresInMs / 1000);
+    } catch (e) {
+        logger.error(`Invalid JWT_EXPIRES_IN format: "${env.JWT_EXPIRES_IN}". Defaulting to 15 minutes.`, { error: e });
+        expiresInSeconds = 15 * 60; // Default to 15 minutes (900 seconds) if conversion fails
+    }
+
+    // Explicitly type the options object using SignOptions
+    const signOptions: SignOptions = {
+        expiresIn: expiresInSeconds, // Use the numeric value (seconds)
+        // algorithm: 'HS256' // Default is HS256, specify if needed
+    };
+
+    // Sign the token
+    return jwt.sign(payload, env.JWT_SECRET, signOptions);
 };
 
 /**
- * Generate a secure refresh token, hash it, and store it.
+ * Generate a secure refresh token, hash it, and store it in the database.
+ * @param {User} user - The user object.
+ * @param {string} [ipAddress] - Optional IP address of the request.
+ * @param {string} [userAgent] - Optional user agent string of the request.
+ * @returns {Promise<string>} A promise that resolves with the raw (unhashed) refresh token.
  */
 const generateAndStoreRefreshToken = async (user: User, ipAddress?: string, userAgent?: string): Promise<string> => {
     const rawRefreshToken = generateSecureToken(64); // Generate a long random token
     const hashedToken = await hashToken(rawRefreshToken);
-    const expiryDate = new Date(Date.now() + ms(`${env.JWT_REFRESH_EXPIRES_IN_DAYS}d`));
+    // Use ms() here for calculating the Date object - less problematic type-wise
+    let expiryDate: Date;
+    try {
+        const expiryMs = ms(`${env.JWT_REFRESH_EXPIRES_IN_DAYS}d`);
+         if (typeof expiryMs !== 'number' || isNaN(expiryMs) || expiryMs <= 0) {
+             throw new Error(`Invalid JWT_REFRESH_EXPIRES_IN_DAYS format: "${env.JWT_REFRESH_EXPIRES_IN_DAYS}"`);
+        }
+        expiryDate = new Date(Date.now() + expiryMs);
+    } catch(e) {
+        const defaultDays = 7;
+        logger.error(`Invalid JWT_REFRESH_EXPIRES_IN_DAYS format: "${env.JWT_REFRESH_EXPIRES_IN_DAYS}". Defaulting to ${defaultDays} days.`, { error: e });
+        expiryDate = new Date(Date.now() + defaultDays * 24 * 60 * 60 * 1000); // Default fallback
+    }
+
 
     await prisma.refreshToken.create({
         data: {
@@ -44,41 +96,52 @@ const generateAndStoreRefreshToken = async (user: User, ipAddress?: string, user
             userAgent: userAgent, // Store user agent (optional)
         },
     });
+    logger.debug(`Stored new refresh token for user ${user.id}`);
     return rawRefreshToken; // Return the raw token only once
 };
 
 /**
- * Find and validate a stored refresh token. Check for revocation and expiry.
+ * Find and validate a stored refresh token based on the raw token provided.
+ * Checks hash match, expiry, and revocation status.
+ * Note: This implementation iterates through potential tokens, which can be inefficient at large scale.
+ * @param {string} rawRefreshToken - The raw refresh token provided by the client.
+ * @returns {Promise<RefreshToken>} A promise that resolves with the valid RefreshToken record.
+ * @throws {ApiError} If the token is not found, invalid, expired, or revoked.
  */
-const findAndValidateRefreshToken = async (rawRefreshToken: string, userId: string): Promise<RefreshToken> => {
-    // Find potential tokens for the user first (limits hash comparisons)
-    const potentialTokens = await prisma.refreshToken.findMany({
+const findAndValidateRefreshToken = async (rawRefreshToken: string): Promise<RefreshToken> => {
+    // Find *all* non-revoked, non-expired tokens and check hash match.
+    const potentialValidTokens = await prisma.refreshToken.findMany({
         where: {
-            userId: userId,
-            revokedAt: null, // Only consider non-revoked tokens
-            expiresAt: { gt: new Date() } // Only consider non-expired tokens
+            revokedAt: null,
+            expiresAt: { gt: new Date() }
         }
     });
 
-    if (!potentialTokens.length) {
-        throw new ApiError(httpStatus.UNAUTHORIZED, 'Refresh token not found or invalid');
-    }
-
-    // Iterate and compare hashes
-    for (const tokenRecord of potentialTokens) {
+    let matchedTokenRecord: RefreshToken | null = null;
+    for (const tokenRecord of potentialValidTokens) {
         const isMatch = await compareToken(rawRefreshToken, tokenRecord.tokenHash);
-        if (isMatch) {
-            return tokenRecord; // Found a valid, matching token
-        }
+         if (isMatch) {
+            matchedTokenRecord = tokenRecord;
+            break;
+         }
     }
 
-    // If no match found after checking all potential tokens for the user
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'Refresh token not found or invalid');
+    if (!matchedTokenRecord) {
+        throw new ApiError(httpStatus.UNAUTHORIZED, 'Invalid refresh token or session expired.');
+    }
+
+    logger.debug(`Validated refresh token record ${matchedTokenRecord.id} for user ${matchedTokenRecord.userId}`);
+    return matchedTokenRecord;
 };
 
 
 /**
  * Login with username and password, generate access and refresh tokens.
+ * @param {string} email - User's email.
+ * @param {string} password - User's password.
+ * @param {string} [ipAddress] - Optional IP address.
+ * @param {string} [userAgent] - Optional user agent.
+ * @returns {Promise<{user: Omit<User, 'passwordHash'>; tokens: AuthTokens}>} User object and auth tokens.
  */
 const loginUserWithEmailAndPassword = async (
     email: string,
@@ -86,13 +149,18 @@ const loginUserWithEmailAndPassword = async (
     ipAddress?: string,
     userAgent?: string
 ): Promise<{ user: Omit<User, 'passwordHash'>; tokens: AuthTokens }> => {
-    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    const logContext = { email, ipAddress, tenantId: user?.tenantId, userId: user?.id };
+    const lowerCaseEmail = email.toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: lowerCaseEmail } });
+    // Define logContext upfront
+    const logContext: LogContext = { function: 'login', email: lowerCaseEmail, ipAddress, tenantId: user?.tenantId, userId: user?.id };
 
     if (!user) {
         logger.warn('Login failed: User not found', logContext);
         throw new ApiError(httpStatus.UNAUTHORIZED, 'Incorrect email or password');
     }
+    // Update context if user is found but other checks fail
+    logContext.tenantId = user.tenantId;
+    logContext.userId = user.id;
 
     const isPasswordMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordMatch) {
@@ -111,6 +179,7 @@ const loginUserWithEmailAndPassword = async (
 
     logger.info('Login successful', logContext);
 
+    // Exclude password hash from returned user object
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash, ...userWithoutPassword } = user;
 
@@ -123,158 +192,134 @@ const loginUserWithEmailAndPassword = async (
 /**
  * Refresh authentication tokens using a valid refresh token.
  * Implements refresh token rotation and basic reuse detection.
+ * @param {string} oldRawRefreshToken - The raw refresh token from the client (e.g., cookie).
+ * @param {string} [ipAddress] - Optional IP address.
+ * @param {string} [userAgent] - Optional user agent.
+ * @returns {Promise<AuthTokens>} New access and refresh tokens.
  */
 const refreshAuthTokens = async (
     oldRawRefreshToken: string,
     ipAddress?: string,
     userAgent?: string
 ): Promise<AuthTokens> => {
-    let userIdFromExpiredToken: string | undefined;
-    let tenantIdFromExpiredToken: string | undefined;
-
-     // 1. Decode expired access token *without* verifying expiry to get user context
+    const logContext: LogContext = { function: 'refreshAuthTokens', ipAddress };
     try {
-         // This is slightly less secure than having the client send userId, but common.
-         // Alternatively, the refresh token itself could contain userId/tenantId, but that increases its value if stolen.
-         // Best practice often involves finding the token in DB first, then getting the user.
-         // Let's stick to finding token in DB first based on a userId potentially sent by client or derived later.
+        // Find the matching, valid, non-revoked token record
+        const matchedTokenRecord = await findAndValidateRefreshToken(oldRawRefreshToken);
+        logContext.userId = matchedTokenRecord.userId;
+        logContext.tokenId = matchedTokenRecord.id;
 
-         // We need the user ID to find the token efficiently.
-         // How do we get it? The client should ideally store it securely (e.g., localStorage, NOT decoded from expired JWT).
-         // For this example, let's assume the client *could* send userId, but that's not ideal.
-         // Let's refine: We'll need to find the token record potentially matching the hash first. This is less efficient.
-         // Okay, revised strategy: Assume client sends *only* the refresh token (from cookie).
-         // We need a way to link the raw token back to the user *without* iterating all hashes.
-         // Compromise: Decode the refresh token *if* it's a JWT (it shouldn't be, use opaque tokens).
-         // Let's stick to the secure opaque token method: Find the matching hash first (less efficient but more secure).
-
-         // Re-Revised Strategy: The most secure & common way involves the client sending the refresh token
-         // AND the server finding the corresponding *hashed* token in the DB. We cannot efficiently find by hash.
-         // THEREFORE, the refresh token record in the DB *must* contain the userId.
-         // The client sends the *raw* refresh token (from cookie). The server needs to find the *hashed* version associated with a user.
-         // This still requires iterating or a different storage mechanism (e.g., Redis lookup raw->userId).
-
-         // Let's implement the DB iteration method for now, acknowledging its performance limitation on huge scale.
-         // Find *all* non-revoked, non-expired tokens and check hash match.
-         const potentialValidTokens = await prisma.refreshToken.findMany({
-            where: {
-                revokedAt: null,
-                expiresAt: { gt: new Date() }
-            }
-         });
-
-         let matchedTokenRecord: RefreshToken | null = null;
-         for (const tokenRecord of potentialValidTokens) {
-            const isMatch = await compareToken(oldRawRefreshToken, tokenRecord.tokenHash);
-             if (isMatch) {
-                matchedTokenRecord = tokenRecord;
-                break;
-             }
-         }
-
-         if (!matchedTokenRecord) {
-            logger.warn(`Refresh token validation failed: No matching active token found for hash comparison. IP: ${ipAddress}`);
-             throw new ApiError(httpStatus.UNAUTHORIZED, 'Invalid refresh token or session expired.');
-         }
-
-         // **Reuse Detection (Optional but Recommended):**
-         // If found, immediately mark the matched token as revoked. If we later fail to create a new one,
-         // the user has to log in again. This prevents reuse if the same token is presented again quickly.
-         await prisma.refreshToken.update({
-            where: { id: matchedTokenRecord.id },
-            data: { revokedAt: new Date() },
-         });
-
-
-         // Get user associated with the token
-         const user = await prisma.user.findUnique({ where: { id: matchedTokenRecord.userId } });
-
-         if (!user || !user.isActive) {
-            logger.warn(`Refresh token validation failed: User ${matchedTokenRecord.userId} not found or inactive. IP: ${ipAddress}`);
-            throw new ApiError(httpStatus.UNAUTHORIZED, 'User associated with token not found or inactive.');
-         }
-
-         // Generate new pair of tokens
-         const newAccessToken = generateAccessToken(user);
-         const newRawRefreshToken = await generateAndStoreRefreshToken(user, ipAddress, userAgent);
-
-          logger.info(`Auth tokens refreshed successfully for user: ${user.id}. IP: ${ipAddress}`);
-         return {
-            accessToken: newAccessToken,
-            refreshToken: newRawRefreshToken,
-         };
-
-    } catch (error) {
-        // Handle specific errors like token not found/invalid from findAndValidateRefreshToken
-        if (error instanceof ApiError && error.statusCode === httpStatus.UNAUTHORIZED) {
-             logger.warn(`Refresh token validation failed: ${error.message}. IP: ${ipAddress}`);
-            throw error; // Re-throw the specific error
-        }
-        // Handle other potential errors (DB errors during revoke/create)
-        logger.error(`Error during token refresh: ${error}. IP: ${ipAddress}`);
-        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Could not refresh token.');
-    }
-};
-
-/**
- * Logout user by revoking a specific refresh token.
- */
-const logoutUser = async (rawRefreshToken: string): Promise<void> => {
-    // Similar to refresh, we need to find the matching token record to revoke it.
-    const potentialValidTokens = await prisma.refreshToken.findMany({
-        where: {
-            revokedAt: null,
-            expiresAt: { gt: new Date() }
-        }
-     });
-
-     let matchedTokenRecord: RefreshToken | null = null;
-     for (const tokenRecord of potentialValidTokens) {
-         const isMatch = await compareToken(rawRefreshToken, tokenRecord.tokenHash);
-         if (isMatch) {
-            matchedTokenRecord = tokenRecord;
-            break;
-         }
-     }
-
-    if (matchedTokenRecord) {
+        // **Reuse Detection / Rotation:**
+        // Immediately mark the matched token as revoked *before* generating new ones.
         await prisma.refreshToken.update({
             where: { id: matchedTokenRecord.id },
             data: { revokedAt: new Date() },
         });
-         logger.info(`User logout successful: Revoked refresh token for user ${matchedTokenRecord.userId}`);
-    } else {
-        // Log if the token presented was already invalid/expired/revoked, but don't fail the logout itself.
-         logger.warn(`Logout attempt with invalid/expired/revoked refresh token.`);
+        logger.debug(`Revoked old refresh token ${matchedTokenRecord.id} during refresh`, logContext);
+
+        // Get user associated with the token
+        const user = await prisma.user.findUnique({ where: { id: matchedTokenRecord.userId } });
+
+        if (!user || !user.isActive) {
+            logger.warn(`Refresh token validation failed: User not found or inactive.`, logContext);
+            throw new ApiError(httpStatus.UNAUTHORIZED, 'User associated with token not found or inactive.');
+        }
+        logContext.tenantId = user.tenantId; // Add tenantId
+
+        // Generate a new pair of tokens
+        const newAccessToken = generateAccessToken(user);
+        const newRawRefreshToken = await generateAndStoreRefreshToken(user, ipAddress, userAgent);
+
+        logger.info(`Auth tokens refreshed successfully`, logContext);
+        return {
+            accessToken: newAccessToken,
+            refreshToken: newRawRefreshToken,
+        };
+
+    } catch (error) {
+        logContext.error = error; // Add error to context for logging
+        if (error instanceof ApiError && error.statusCode === httpStatus.UNAUTHORIZED) {
+             logger.warn(`Refresh token validation failed: ${error.message}.`, logContext);
+            throw error; // Re-throw the specific ApiError
+        }
+        logger.error(`Error during token refresh`, logContext);
+        // Throw a generic server error for unexpected issues
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Could not refresh token due to an internal error.');
     }
-    // Client should clear its stored tokens/cookies regardless
+};
+
+/**
+ * Logout user by revoking a specific refresh token hash found in the database.
+ * @param {string} rawRefreshToken - The raw refresh token provided by the client.
+ * @returns {Promise<void>}
+ */
+const logoutUser = async (rawRefreshToken: string): Promise<void> => {
+    const logContext: LogContext = { function: 'logoutUser' };
+    try {
+        // Find the matching token record to revoke it.
+        const matchedTokenRecord = await findAndValidateRefreshToken(rawRefreshToken);
+        logContext.userId = matchedTokenRecord.userId;
+        logContext.tokenId = matchedTokenRecord.id;
+
+        // Mark the specific token as revoked
+        await prisma.refreshToken.update({
+            where: { id: matchedTokenRecord.id },
+            data: { revokedAt: new Date() },
+        });
+        logger.info(`User logout successful: Revoked refresh token`, logContext);
+
+    } catch (error) {
+        logContext.error = error; // Add error to context
+         // If findAndValidateRefreshToken threw an error (token not found, expired, already revoked)
+         if (error instanceof ApiError && error.statusCode === httpStatus.UNAUTHORIZED) {
+            logger.warn(`Logout attempt with invalid/expired/revoked refresh token: ${error.message}`, logContext);
+         } else {
+            // Log unexpected errors during the process
+             logger.error(`Error during logout process`, logContext);
+         }
+         // We don't throw an error here. Logout should succeed from the client's perspective
+         // even if the token was already invalid server-side. Client should clear its tokens.
+    }
 };
 
 
 /**
- * Initiate password reset process.
+ * Initiate password reset process: Generate token, store hash, send email.
+ * @param {string} email - The email address of the user requesting the reset.
+ * @returns {Promise<void>}
  */
 const forgotPassword = async (email: string): Promise<void> => {
-    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    const logContext = { email, userId: user?.id, tenantId: user?.tenantId };
+    const lowerCaseEmail = email.toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: lowerCaseEmail } });
+    // Define context with all potential fields marked optional initially
+    const logContext: LogContext = { function: 'forgotPassword', email: lowerCaseEmail, userId: user?.id, tenantId: user?.tenantId };
 
-    // IMPORTANT: Always return a success-like message to prevent email enumeration attacks.
-    // Perform actions only if user exists.
-    if (!user) {
-        logger.warn(`Forgot password request: User not found`, logContext);
-        return; // Do nothing further, but don't signal failure to the requester
+    // IMPORTANT: Always return successfully to prevent email enumeration attacks.
+    if (!user || !user.isActive) {
+        logger.warn(`Forgot password request: User not found or inactive`, logContext);
+        return; // Do nothing further visible to the user
     }
-     if (!user.isActive) {
-        logger.warn(`Forgot password request: User inactive`, logContext);
-        return; // Do nothing further
-    }
+    // Update context now we know user exists
+    logContext.userId = user.id;
+    logContext.tenantId = user.tenantId;
 
     // Generate reset token
-    const rawResetToken = generateSecureToken();
+    const rawResetToken = generateSecureToken(); // Use a different length if desired, e.g., 48
     const hashedToken = await hashToken(rawResetToken);
-    const expiryDate = new Date(Date.now() + ms(env.PASSWORD_RESET_EXPIRES_IN));
+    let expiryDate: Date;
+    try {
+        const expiryMs = ms(env.PASSWORD_RESET_EXPIRES_IN);
+         if (typeof expiryMs !== 'number' || isNaN(expiryMs) || expiryMs <= 0) {
+             throw new Error(`Invalid time string format: "${env.PASSWORD_RESET_EXPIRES_IN}"`);
+        }
+        expiryDate = new Date(Date.now() + expiryMs);
+    } catch (e) {
+         logger.error(`Invalid PASSWORD_RESET_EXPIRES_IN format: "${env.PASSWORD_RESET_EXPIRES_IN}". Defaulting to 1 hour.`, { error: e });
+         expiryDate = new Date(Date.now() + 60 * 60 * 1000); // Default to 1 hour
+    }
 
-    // Store hashed token in DB
+    // Store hashed token in DB (consider removing old tokens)
+    await prisma.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null }});
     await prisma.passwordResetToken.create({
         data: {
             userId: user.id,
@@ -282,36 +327,41 @@ const forgotPassword = async (email: string): Promise<void> => {
             expiresAt: expiryDate,
         }
     });
+    logger.debug(`Stored password reset token`, logContext);
 
-    // Construct reset URL
-    const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${rawResetToken}`; // Send RAW token in link
+    // Construct reset URL (send RAW token in the link)
+    const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${rawResetToken}`;
 
-    // Send email (using mock service here)
+    // Send email (using mock/real service)
     const emailSent = await emailService.sendEmail({
         to: user.email,
         subject: 'Password Reset Request',
-        text: `You requested a password reset. Click the following link to reset your password: ${resetUrl}\n\nIf you did not request this, please ignore this email. This link will expire in ${env.PASSWORD_RESET_EXPIRES_IN}.`,
-        // html: `<p>...</p>` // Optional HTML version
+        text: `You requested a password reset. Click the following link to reset your password:\n${resetUrl}\n\nIf you did not request this, please ignore this email. This link will expire in ${env.PASSWORD_RESET_EXPIRES_IN}.`,
+        // html: `<p>You requested a password reset. Click <a href="${resetUrl}">here</a> to reset your password.</p><p>Link expires in ${env.PASSWORD_RESET_EXPIRES_IN}.</p>`
     });
 
     if (emailSent) {
         logger.info(`Password reset email initiated successfully`, logContext);
     } else {
-        // Log failure but don't expose error details unless necessary for debugging
         logger.error(`Password reset email failed to send`, logContext);
-        // Depending on policy, you might still want the user to see a success message.
-        // Or throw an internal server error if email sending is critical.
-        // throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Could not send password reset email.');
+        // Silently fail from user perspective, but log the error.
     }
-     // Always return void to the controller, regardless of user found or email success
+     // Always return void to the controller
 };
 
 
 /**
- * Reset user password using a valid token.
+ * Reset user password using a valid token and new password.
+ * @param {string} rawResetToken - The raw reset token from the URL/request.
+ * @param {string} newPassword - The new password provided by the user.
+ * @returns {Promise<void>}
+ * @throws {ApiError} If token is invalid/expired or user not found/inactive, or update fails.
  */
 const resetPassword = async (rawResetToken: string, newPassword: string): Promise<void> => {
-    // 1. Find potentially matching tokens (hashed) - cannot search by hash directly efficiently
+    // Define context with all potential fields marked optional initially
+    const logContext: LogContext = { function: 'resetPassword', userId: null, tenantId: null, email: null, tokenId: null };
+
+     // 1. Find potentially matching, unused, non-expired token records
      const potentialTokenRecords = await prisma.passwordResetToken.findMany({
         where: {
             usedAt: null, // Not already used
@@ -321,6 +371,7 @@ const resetPassword = async (rawResetToken: string, newPassword: string): Promis
 
      let matchedTokenRecord: PasswordResetToken | null = null;
      for (const tokenRecord of potentialTokenRecords) {
+         // 2. Compare provided raw token with stored hash
          const isMatch = await compareToken(rawResetToken, tokenRecord.tokenHash);
          if (isMatch) {
             matchedTokenRecord = tokenRecord;
@@ -329,50 +380,58 @@ const resetPassword = async (rawResetToken: string, newPassword: string): Promis
      }
 
     if (!matchedTokenRecord) {
-        logger.warn(`Password reset attempt failed: Invalid or expired token provided.`);
+        logger.warn(`Password reset attempt failed: Invalid or expired token provided.`, logContext);
         throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or expired password reset token.');
     }
+    // Update logContext properties now we have a match
+    logContext.userId = matchedTokenRecord.userId;
+    logContext.tokenId = matchedTokenRecord.id;
 
-    // 2. Get the user associated with the token
+    // 3. Get the user associated with the valid token
     const user = await prisma.user.findUnique({ where: { id: matchedTokenRecord.userId } });
     if (!user || !user.isActive) {
-        // This case should be rare if token exists, but handle it.
-        logger.error(`Password reset failed: User ${matchedTokenRecord.userId} not found or inactive for a valid token.`);
-         // Mark token as used to prevent retries with the same token
+        logger.error(`Password reset failed: User not found or inactive for a valid token.`, logContext);
+         // Mark token as used even if user not found to prevent reuse
         await prisma.passwordResetToken.update({ where: { id: matchedTokenRecord.id }, data: { usedAt: new Date() }});
-        throw new ApiError(httpStatus.BAD_REQUEST, 'User not found or inactive.');
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Associated user account not found or inactive.');
     }
-    const logContext = { userId: user.id, tenantId: user.tenantId, email: user.email };
+    // Update logContext properties
+    logContext.tenantId = user.tenantId;
+    logContext.email = user.email;
 
 
-    // 3. Hash the new password
-    const newPasswordHash = await bcrypt.hash(newPassword, 10); // Use appropriate salt rounds
+    // 4. Hash the new password
+    const newPasswordHash = await bcrypt.hash(newPassword, 10); // Use appropriate salt rounds (e.g., 10-12)
 
-    // 4. Update user password and mark token as used (in a transaction)
+    // 5. Update user password, mark token as used, and revoke refresh tokens in a transaction
     try {
-        await prisma.$transaction([
-            prisma.user.update({
+        // Use Prisma Transaction Client type for type safety within transaction
+        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+            await tx.user.update({
                 where: { id: user.id },
                 data: { passwordHash: newPasswordHash },
-            }),
-            prisma.passwordResetToken.update({
-                where: { id: matchedTokenRecord.id },
-                data: { usedAt: new Date() }, // Mark token as used
-            }),
-            // Optional: Revoke all active refresh tokens for this user upon password reset
-            prisma.refreshToken.updateMany({
+            });
+            await tx.passwordResetToken.update({
+                where: { id: matchedTokenRecord!.id }, // Use non-null assertion as we checked above
+                data: { usedAt: new Date() }, // Mark reset token as used
+            });
+            // Security enhancement: Revoke all active refresh tokens for this user
+            await tx.refreshToken.updateMany({
                 where: { userId: user.id, revokedAt: null },
                 data: { revokedAt: new Date() }
-            })
-        ]);
+            });
+        });
          logger.info(`Password reset successful`, logContext);
     } catch (error) {
-         logger.error(`Password reset transaction failed: ${error}`, logContext);
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update password.');
+        logContext.error = error; // Add error to context
+        logger.error(`Password reset transaction failed`, logContext);
+        // Provide a generic error message to the user
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update password due to an internal error.');
     }
 };
 
 
+// Export the public service methods
 export const authService = {
   loginUserWithEmailAndPassword,
   refreshAuthTokens,
