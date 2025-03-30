@@ -1015,4 +1015,5 @@ export const inventoryService = {
   getTransferById,
   queryInventoryItems,
   getInventoryItemById,
+  _recordStockMovement
 };
