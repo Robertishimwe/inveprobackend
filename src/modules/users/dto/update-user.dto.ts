@@ -6,7 +6,8 @@ import {
     IsArray,
     ArrayNotEmpty,
     IsUUID,
-    IsBoolean
+    IsBoolean,
+    IsNotEmpty
   } from 'class-validator';
   // import { PartialType } from '@nestjs/mapped-types'; // Can use this if installed
   // import { CreateUserDto } from './create-user.dto';

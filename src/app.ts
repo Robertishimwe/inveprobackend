@@ -13,8 +13,8 @@ import logger from '@/utils/logger';
 // --- Import Module Routers ---
 // These should export the configured express.Router() instance for each module
 import authRoutes from '@/modules/auth/auth.routes';
-// import userRoutes from '@/modules/users/user.routes';
-// import productRoutes from '@/modules/products/product.routes';
+import userRoutes from '@/modules/users/user.routes';
+import productRoutes from '@/modules/products/product.routes';
 // import inventoryRoutes from '@/modules/inventory/inventory.routes';
 // import orderRoutes from '@/modules/orders/order.routes';
 // import posRoutes from '@/modules/pos/pos.routes';
@@ -73,8 +73,8 @@ app.get('/', (req: Request, res: Response) => {
 const apiRouter = express.Router();
 
 apiRouter.use('/auth', authRoutes);
-// apiRouter.use('/users', userRoutes);
-// apiRouter.use('/products', productRoutes);
+apiRouter.use('/users', userRoutes);
+apiRouter.use('/products', productRoutes);
 // apiRouter.use('/inventory', inventoryRoutes);
 // apiRouter.use('/orders', orderRoutes);
 // apiRouter.use('/pos', posRoutes);
