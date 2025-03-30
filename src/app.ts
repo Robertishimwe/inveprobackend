@@ -19,8 +19,9 @@ import inventoryRoutes from '@/modules/inventory/inventory.routes';
 // import orderRoutes from '@/modules/orders/order.routes';
 // import posRoutes from '@/modules/pos/pos.routes';
 // import customerRoutes from '@/modules/customers/customer.routes';
-// import supplierRoutes from '@/modules/suppliers/supplier.routes';
+import supplierRoutes from '@/modules/suppliers/supplier.routes';
 import locationRoutes from '@/modules/location/location.routes';
+import categoryRoutes from '@/modules/category/category.routes';
 // Add imports for any other modules (e.g., categories, locations, reporting)
 
 const app: Express = express();
@@ -80,10 +81,10 @@ apiRouter.use('/inventory', inventoryRoutes);
 // apiRouter.use('/orders', orderRoutes);
 // apiRouter.use('/pos', posRoutes);
 // apiRouter.use('/customers', customerRoutes);
-// apiRouter.use('/suppliers', supplierRoutes);
+apiRouter.use('/suppliers', supplierRoutes);
 // Mount other module routers here...
 apiRouter.use('/locations', locationRoutes);
-// apiRouter.use('/categories', categoryRoutes);
+apiRouter.use('/categories', categoryRoutes);
 
 app.use('/api/v1', apiRouter);
 
