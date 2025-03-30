@@ -1,0 +1,91 @@
+version: '3.8' # Specify docker-compose version
+
+services:
+  # Application Service (Node.js/Express)
+  app:
+    container_name: inventory_pos_app # Friendly name for the container
+    build:
+      context: . # Build the image from the Dockerfile in the current directory
+      dockerfile: Dockerfile # Explicitly specify the Dockerfile name
+      # target: development # Optional: Define a 'development' stage in Dockerfile for dev-specific setup
+                           # If not defined, it builds the whole Dockerfile, but volume mounts override code.
+    command: npm run dev # Override the Dockerfile CMD for development (uses nodemon)
+    ports:
+      # Map host port (defined in .env or default 5000) to container port 5000
+      - "${PORT:-5000}:${PORT:-5000}"
+    volumes:
+      # Mount local source code into the container for hot-reloading
+      # Any changes in ./src will be reflected inside the container
+      - ./src:/usr/src/app/src
+      # Mount prisma directory for schema changes (optional, but useful if you edit schema often)
+      - ./prisma:/usr/src/app/prisma
+      # Named volume for node_modules to prevent local node_modules from overwriting container's
+      # This isolates container dependencies from the host.
+      - node_modules_volume:/usr/src/app/node_modules
+    depends_on:
+      # Ensure database and cache services are started and healthy before the app starts
+      db:
+        condition: service_healthy # Wait for DB healthcheck to pass
+      cache:
+        condition: service_healthy # Wait for Cache healthcheck to pass
+    env_file:
+      - .env # Load environment variables directly from the .env file
+    environment:
+      # Override or add specific environment variables if needed
+      - NODE_ENV=development # Ensure development mode for nodemon etc.
+    networks:
+      - inventory_network # Connect to the custom network
+
+  # Database Service (PostgreSQL)
+  db:
+    container_name: inventory_pos_db
+    image: postgres:15-alpine # Use specific PostgreSQL version on Alpine
+    ports:
+      # Expose PostgreSQL port to the host machine (optional, for external DB tools)
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # Use a named volume to persist database data across container restarts
+      - inventory_db_data:/var/lib/postgresql/data
+    environment:
+      # Set PostgreSQL credentials and database name using variables from .env file
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    networks:
+      - inventory_network
+    healthcheck:
+      # Check if the database is ready to accept connections
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s # Check every 10 seconds
+      timeout: 5s   # Wait max 5 seconds for response
+      retries: 5    # Try 5 times before marking as unhealthy
+
+  # Cache Service (Redis)
+  cache:
+    container_name: inventory_pos_cache
+    image: redis:7-alpine # Use specific Redis version on Alpine
+    ports:
+      # Expose Redis port to the host machine (optional)
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      # Use a named volume to persist Redis data (optional for cache, useful if using Redis for more than just cache)
+      - inventory_redis_data:/data
+    networks:
+      - inventory_network
+    healthcheck:
+      # Check if Redis server is responding to PING command
+      test: ["CMD", "redis-cli", "--raw", "ping"] # Use --raw to prevent "(integer) 0" on failure
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# Named Volumes Definitions
+volumes:
+  inventory_db_data: # Volume for PostgreSQL data
+  inventory_redis_data: # Volume for Redis data
+  node_modules_volume: # Volume for node_modules isolation
+
+# Custom Network Definition
+networks:
+  inventory_network:
+    driver: bridge # Use the default bridge driver

@@ -1,0 +1,57 @@
+{
+    "compilerOptions": {
+      /* Basic Options */
+      "target": "ES2020",                       // Specify ECMAScript target version (ES2020 supports BigInt literals etc.)
+      "module": "CommonJS",                     // Specify module code generation: 'CommonJS' for Node.js
+      "lib": ["ESNext"],                        // Specify library files to be included in the compilation.
+      "allowJs": false,                         // Disallow javascript files to be compiled.
+      "checkJs": false,                         // Do not report errors in .js files.
+      "declaration": false,                     // Do not generate corresponding '.d.ts' file. Useful for libraries, not apps.
+      "sourceMap": true,                        // Generates corresponding '.map' file for debugging.
+      "outDir": "./dist",                       // Redirect output structure to the directory.
+      "rootDir": "./src",                       // Specify the root directory of input files.
+  
+      /* Strict Type-Checking Options */
+      "strict": true,                           // Enable all strict type-checking options.
+      // "noImplicitAny": true,                 // Raise error on expressions and declarations with an implied 'any' type. (Included in 'strict')
+      // "strictNullChecks": true,              // Enable strict null checks. (Included in 'strict')
+      // "strictFunctionTypes": true,           // Enable strict checking of function types. (Included in 'strict')
+      // "strictBindCallApply": true,           // Enable strict 'bind', 'call', and 'apply' methods on functions. (Included in 'strict')
+      // "strictPropertyInitialization": true,  // Ensure non-undefined class properties are initialized in the constructor. (Included in 'strict')
+      // "noImplicitThis": true,                // Raise error on 'this' expressions with an implied 'any' type. (Included in 'strict')
+      // "alwaysStrict": true,                  // Parse in strict mode and emit "use strict" for each source file. (Included in 'strict')
+  
+      /* Additional Checks */
+      "noUnusedLocals": true,                   // Report errors on unused locals.
+      "noUnusedParameters": true,               // Report errors on unused parameters.
+      "noImplicitReturns": true,                // Report error when not all code paths in function return a value.
+      "noFallthroughCasesInSwitch": true,       // Report errors for fallthrough cases in switch statement.
+      "noUncheckedIndexedAccess": false,        // Recommended: Set to true for stricter array/object index access checks (requires careful handling)
+  
+      /* Module Resolution Options */
+      "moduleResolution": "node",               // Specify module resolution strategy: 'node' for Node.js.
+      "baseUrl": ".",                           // Base directory to resolve non-absolute module names.
+      "paths": {                                // Series of entries which re-map imports to lookup locations relative to the 'baseUrl'.
+        "@/*": ["src/*"]
+      },
+      "esModuleInterop": true,                  // Enables emit interoperability between CommonJS and ES Modules. Recommended.
+      // "preserveSymlinks": true,              // Do not resolve the real path of symlinks.
+  
+      /* Advanced Options */
+      "skipLibCheck": true,                     // Skip type checking of declaration files. Improves build time.
+      "forceConsistentCasingInFileNames": true, // Disallow inconsistently-cased references to the same file. Essential for cross-platform compatibility.
+      "resolveJsonModule": true,                // Include modules imported with '.json' extension
+  
+      /* Experimental Options */
+      "experimentalDecorators": true,           // Enables experimental support for ES7 decorators. (Required for class-validator etc.)
+      "emitDecoratorMetadata": true            // Enables experimental support for emitting type metadata for decorators. (Required for class-validator etc.)
+    },
+    "include": ["src/**/*"],                    // Specifies an array of filenames or patterns to include in the program.
+    "exclude": [                                // Specifies an array of filenames or patterns that should be skipped when resolving 'include'.
+      "node_modules",
+      "dist",
+      "**/*.spec.ts",
+      "**/*.test.ts",
+      "jest.config.js"                          // Exclude Jest config if it's JS
+    ]
+  }
