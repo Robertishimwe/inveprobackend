@@ -1,7 +1,7 @@
 // src/middleware/error.middleware.ts
 import { Request, Response, NextFunction } from 'express';
 // Import Prisma namespace along with the client
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { env } from '@/config';
 import logger from '@/utils/logger';
 import ApiError from '@/utils/ApiError';
