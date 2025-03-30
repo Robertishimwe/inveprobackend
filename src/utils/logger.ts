@@ -1,113 +1,87 @@
 // src/utils/logger.ts
 import winston from 'winston';
-import { env } from '@/config'; // Import environment config
+// import { env } from '@/config'; // <<< REMOVE or DELAY using this import during setup
 
-// Define custom levels if needed, otherwise use default npm levels
-// const customLevels = {
-//   error: 0,
-//   warn: 1,
-//   info: 2,
-//   http: 3,
-//   verbose: 4,
-//   debug: 5,
-//   silly: 6
-// };
+// --- Determine log level directly from process.env during setup ---
+// Fallback logic if LOG_LEVEL or NODE_ENV are not set when logger is initialized
+const initialLogLevel = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info');
+// Ensure it's a valid level, default to 'info' if invalid
+const validLevels = ['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly'];
+const finalInitialLogLevel = validLevels.includes(initialLogLevel) ? initialLogLevel : 'info';
+// --------------------------------------------------------------------
 
-// Format to handle Error objects correctly, showing stack trace
+
+// Format to handle Error objects correctly
 const enumerateErrorFormat = winston.format((info) => {
-  if (info instanceof Error) {
-    // Copy error properties including stack to the log info object
-    Object.assign(info, { message: info.stack });
-  }
-  return info;
+    if (info instanceof Error) {
+        Object.assign(info, { message: info.stack });
+    }
+    return info;
 });
 
 // Define the Winston logger instance
 const logger = winston.createLogger({
-  // Use standard npm logging levels: error, warn, info, http, verbose, debug, silly
-  level: env.LOG_LEVEL || (env.NODE_ENV === 'development' ? 'debug' : 'info'), // Default level based on env
-  // levels: customLevels, // Uncomment if using custom levels
+    // Use the level determined directly from process.env or defaults
+    level: finalInitialLogLevel,
+    format: winston.format.combine(
+        enumerateErrorFormat(),
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.splat(),
+        winston.format.printf(({ timestamp, level, message, ...meta }) => {
+            const messageString = typeof message === 'string' ? message : JSON.stringify(message);
+            let log = `[${timestamp}] ${level}: ${messageString}`;
 
-  // Format specification
-  format: winston.format.combine(
-    enumerateErrorFormat(), // Handle Error objects
-    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }), // Add timestamp
-    winston.format.splat(), // Enable string interpolation like %s, %d
-    winston.format.printf(({ timestamp, level, message, ...meta }) => {
-      // Custom format: [Timestamp] LEVEL: Message {meta}
-      let log = `[${timestamp}] ${level}: ${message}`;
-      // Add metadata if present and not empty
-      if (meta && Object.keys(meta).length > 0) {
-        // Special handling for error stacks if not already in message
-        if (meta.stack && typeof message === 'string' && !message.includes(meta.stack)) {
-            log += `\nStack: ${meta.stack}`;
-            delete meta.stack; // Avoid duplicate logging
-        }
-        // Add remaining meta, excluding potentially large objects in production
-        if(env.NODE_ENV === 'development' || Object.keys(meta).length < 5){ // Simple heuristic
-             log += ` ${JSON.stringify(meta)}`;
-        }
-      }
-      return log;
-    })
-  ),
+            if (meta && Object.keys(meta).length > 0) {
+                 if (typeof meta.stack === 'string' && typeof message === 'string' && !message.includes(meta.stack)) {
+                    log += `\nStack: ${meta.stack}`;
+                 }
+                const metaToLog = { ...meta };
+                if(metaToLog.stack) delete metaToLog.stack;
 
-  // Define transports (where logs should go)
-  transports: [
-    // Always log to the console
-    new winston.transports.Console({
-      // Use colorization only in development for readability
-      format: winston.format.combine(
-        env.NODE_ENV === 'development'
-          ? winston.format.colorize() // Add colors
-          : winston.format.uncolorize(),
-        winston.format.printf(({ level, message }) => `${level}: ${message}`) // Simpler format for console output after colorize/uncolorize
-      ),
-      stderrLevels: ['error'], // Log 'error' level messages to stderr
-    }),
-
-    // --- Optional: File Transports for Production ---
-    // Add these if you want to log to files in production
-    /*
-    ...(env.NODE_ENV === 'production' ? [
-      // Log errors to a separate file
-      new winston.transports.File({
-        filename: 'logs/error.log',
-        level: 'error',
-        maxsize: 5242880, // 5MB
-        maxFiles: 5,
-        tailable: true,
-        format: winston.format.combine(
-            winston.format.uncolorize() // Ensure file logs are not colorized
-        )
-      }),
-      // Log all levels (info and above) to a combined file
-      new winston.transports.File({
-        filename: 'logs/combined.log',
-        level: 'info', // Or 'http' if you need request logs in file
-        maxsize: 5242880, // 5MB
-        maxFiles: 10,
-        tailable: true,
-         format: winston.format.combine(
-            winston.format.uncolorize()
-        )
-      })
-    ] : []),
-    */
-  ],
-
-  // Optional: Don't exit on handled exceptions (Winston default is true)
-  // exitOnError: false,
+                if (Object.keys(metaToLog).length > 0) {
+                    // Use process.env here for NODE_ENV check during formatting
+                    if(process.env.NODE_ENV === 'development' || Object.keys(metaToLog).length < 5){
+                         try {
+                             log += ` ${JSON.stringify(metaToLog)}`;
+                         } catch (stringifyError) {
+                            log += ` [meta serialization failed]`;
+                         }
+                    } else {
+                        log += ` [meta omitted in prod]`;
+                    }
+                }
+            }
+            return log;
+        })
+    ),
+    transports: [
+        new winston.transports.Console({
+            format: winston.format.combine(
+                // Use process.env here too
+                process.env.NODE_ENV === 'development'
+                    ? winston.format.colorize()
+                    : winston.format.uncolorize(),
+                winston.format.printf(({ level, message, ...meta }) => {
+                    let consoleMsg = `${level}: ${typeof message === 'string' ? message : JSON.stringify(message)}`;
+                    if(typeof meta.stack === 'string' && typeof message === 'string' && !message.includes(meta.stack)){
+                        consoleMsg = `${level}: ${message}\nStack: ${meta.stack}`;
+                    } else if (typeof meta.stack === 'string' && typeof message !== 'string'){
+                         consoleMsg += `\nStack: ${meta.stack}`;
+                    }
+                    return consoleMsg;
+                })
+            ),
+            stderrLevels: ['error'],
+        }),
+        // Optional File transports remain the same
+    ],
 });
 
-// Create a stream object with a 'write' function that will be used by `morgan`
-// This directs morgan HTTP logs through our Winston logger
-// logger.stream = {
-//   write: (message: string): void => {
-//     // Use the 'http' log level for request logs from morgan
-//     logger.http(message.trim());
-//   },
-// };
-// Morgan is now configured directly in app.ts to use logger.http
+// After the logger is created, you *could* potentially update its level
+// if the validated env object becomes available later, but usually setting
+// it initially from process.env is sufficient.
+// Example (if needed later, perhaps in server.ts after config is loaded):
+// import { env } from '@/config';
+// logger.level = env.LOG_LEVEL;
 
 export default logger;

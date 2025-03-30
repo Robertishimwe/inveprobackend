@@ -10,7 +10,7 @@
     "scripts": {
         "start": "node dist/server.js",
         "build": "tsc && npx prisma generate",
-        "dev": "NODE_ENV=development nodemon --watch src --ext ts --exec ts-node src/server.ts",
+        "dev": "NODE_ENV=development nodemon --watch src --ext ts --exec \"ts-node -r tsconfig-paths/register src/server.ts\"",
         "lint": "eslint . --ext .ts",
         "lint:fix": "eslint . --ext .ts --fix",
         "prettier": "prettier --check \"**/*.ts\"",
@@ -72,6 +72,7 @@
         "supertest": "^6.3.4",
         "ts-jest": "^29.1.2",
         "ts-node": "^10.9.2",
+        "tsconfig-paths": "^4.2.0",
         "typescript": "^5.3.3"
     },
     "lint-staged": {
