@@ -54,7 +54,8 @@ const reconcileSession = catchAsync(async (req: Request, res: Response) => {
 });
 
 const recordCashTransaction = catchAsync(async (req: Request, res: Response) => {
-    const { tenantId, userId, locationId, posTerminalId } = getPosContext(req); // Ensure user is at the right terminal/location
+    // const { tenantId, userId, locationId, posTerminalId } = getPosContext(req); // Ensure user is at the right terminal/location
+    const { tenantId, userId } = getPosContext(req);
     const { sessionId } = req.params;
     // req.body is validated CashTransactionDto
     // Service ensures session is open and belongs to user
@@ -99,7 +100,8 @@ const getSessions = catchAsync(async (req: Request, res: Response) => {
       const page = parseInt(options.page as string) || 1;
 
       const result = await posService.querySessions(filter, orderBy, limit, page);
-      res.status(httpStatus.OK).send({ /* paginated result */ });
+    //   res.status(httpStatus.OK).send({ /* paginated result */ });
+    res.status(httpStatus.OK).send({ result });
 });
 
 // --- Checkout Controller ---
