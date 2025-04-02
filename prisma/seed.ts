@@ -241,7 +241,7 @@ async function main() {
         'report:view:sales', 'report:view:inventory', 'report:view:pos', 'report:view:purchasing', 'report:view:customer', 'report:export',
         'template:manage',
     ];
-    await upsertRoleWithPermissions(tenant.id, 'Manager', 'Manages store operations, staff, and inventory', false, managerPermissionKeys);
+    await upsertRoleWithPermissions(tenant.id, 'Manager', 'Manages store operations, staff, and inventory', true, managerPermissionKeys);
 
     // Cashier/Sales Associate Role
     const cashierPermissionKeys = [
@@ -253,7 +253,7 @@ async function main() {
         'pos:checkout', 'pos:return',
         'pos:discount:apply', // Standard discounts perhaps
     ];
-    await upsertRoleWithPermissions(tenant.id, 'Cashier', 'Handles point-of-sale transactions and customer interactions', false, cashierPermissionKeys);
+    await upsertRoleWithPermissions(tenant.id, 'Cashier', 'Handles point-of-sale transactions and customer interactions', true, cashierPermissionKeys);
 
     // Warehouse Staff Role
     const warehousePermissionKeys = [
@@ -265,7 +265,7 @@ async function main() {
          'inventory:manage:serials', 'inventory:manage:lots',
          'po:read', 'po:receive',
     ];
-    await upsertRoleWithPermissions(tenant.id, 'Warehouse Staff', 'Manages warehouse stock, receiving, and transfers', false, warehousePermissionKeys);
+    await upsertRoleWithPermissions(tenant.id, 'Warehouse Staff', 'Manages warehouse stock, receiving, and transfers', true, warehousePermissionKeys);
 
     // Read Only Analyst Role
     const analystPermissionKeys = [
@@ -278,7 +278,7 @@ async function main() {
         'pos:session:read:any',
         'report:view:sales', 'report:view:inventory', 'report:view:pos', 'report:view:purchasing', 'report:view:customer', 'report:export',
     ];
-    await upsertRoleWithPermissions(tenant.id, 'Analyst', 'Read-only access to view data and reports', false, analystPermissionKeys);
+    await upsertRoleWithPermissions(tenant.id, 'Analyst', 'Read-only access to view data and reports', true, analystPermissionKeys);
 
 
     // 4. Ensure Initial Admin User exists and has Admin role for this Tenant
