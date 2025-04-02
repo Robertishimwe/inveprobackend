@@ -170,8 +170,9 @@ model Tenant {
   // orderItems            OrderItem[] // Removed - Inferred via Order
   // payments              Payment[] // Removed - Inferred via Order
   // returnItems           ReturnItem[] // Removed - Inferred via Return
-  // posSessionTransactions PosSessionTransaction[] // Removed - Inferred via PosSession
+  // posSessionTransactions PoysSessionTransaction[] // Removed - Inferred via PosSession
 
+  @@unique([name])
   @@map("tenants")
 }
 
@@ -690,6 +691,7 @@ model PurchaseOrder {
   expectedDeliveryDate DateTime?           @map("expected_delivery_date") @db.Date
   notes                String?
   shippingCost         Decimal             @default(0) @map("shipping_cost") @db.Decimal(19, 4)
+  subtotal             Decimal             @default(0) @db.Decimal(19, 4)
   taxAmount            Decimal             @default(0) @map("tax_amount") @db.Decimal(19, 4)
   totalAmount          Decimal             @default(0) @map("total_amount") @db.Decimal(19, 4) // Calculated
   createdByUserId      String?             @map("created_by_user_id")
@@ -722,6 +724,7 @@ model PurchaseOrderItem {
   quantityReceived Decimal   @default(0) @map("quantity_received") @db.Decimal(19, 4)
   unitCost         Decimal   @map("unit_cost") @db.Decimal(19, 4)
   taxRate          Decimal   @default(0) @map("tax_rate") @db.Decimal(5, 4)
+  taxAmount        Decimal   @default(0) @db.Decimal(19, 4) @map("tax_amount")
   lineTotal        Decimal   @map("line_total") @db.Decimal(19, 4) // Calculated
   receivedAt       DateTime? @map("received_at") // Last received date for this item
   notes            String?

@@ -24,7 +24,8 @@ import supplierRoutes from '@/modules/suppliers/supplier.routes';
 import locationRoutes from '@/modules/location/location.routes';
 import categoryRoutes from '@/modules/category/category.routes';
 import permissionRoutes from '@/modules/permissions/permission.routes';
-import roleRoutes from '@/modules/roles/role.routes'; 
+import roleRoutes from '@/modules/roles/role.routes';
+import purchaseOrderRoutes from '@/modules/purchase-order/purchase-order.routes';
 // Add imports for any other modules (e.g., reporting)
 
 const app: Express = express();
@@ -89,6 +90,7 @@ apiRouter.use('/suppliers', supplierRoutes);
 apiRouter.use('/locations', locationRoutes);
 apiRouter.use('/categories', categoryRoutes);
 apiRouter.use('/customer-group', customerGroupRoutes);
+apiRouter.use('/purchase-orders', purchaseOrderRoutes);
 apiRouter.use('/permissions', permissionRoutes);
 apiRouter.use('/roles', roleRoutes);  
 
