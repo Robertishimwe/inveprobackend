@@ -61,6 +61,7 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'location:update', description: 'Update location details' },
     { permissionKey: 'location:delete', description: 'Delete locations' },
     // Inventory Management
+    { permissionKey: 'inventory:read', description: 'View current stock' },
     { permissionKey: 'inventory:read:levels', description: 'View current stock levels' },
     { permissionKey: 'inventory:read:transactions', description: 'View historical inventory transaction logs' },
     { permissionKey: 'inventory:adjust', description: 'Create inventory adjustments' },
