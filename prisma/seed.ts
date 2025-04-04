@@ -117,6 +117,7 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'pos:session:reconcile', description: 'Reconcile a closed POS session' },
     { permissionKey: 'pos:session:read:own', description: 'View details of own POS sessions' },
     { permissionKey: 'pos:session:read:any', description: 'View details of any POS session' },
+    { permissionKey: 'pos:session:read', description: 'View details of any POS session' },
     { permissionKey: 'pos:session:cash', description: 'Perform Pay In / Pay Out cash transactions' },
     { permissionKey: 'pos:checkout', description: 'Perform a sales transaction checkout' },
     { permissionKey: 'pos:return', description: 'Process returns/exchanges at the POS' },

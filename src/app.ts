@@ -32,6 +32,7 @@ const app: Express = express();
 
 // --- Security Middleware ---
 // Set various HTTP headers for security
+app.set('trust proxy', 1);
 app.use(helmet());
 
 // Enable CORS (Cross-Origin Resource Sharing)

@@ -719,6 +719,9 @@ const processPosCheckout = async (
              });
 
             return finalOrder; // Return the created order with includes
+        }, {
+            maxWait: 15000, // Allow 15 seconds for the operation to start
+            timeout: 30000  // <<< Allow 30 seconds for the entire transaction
         });
 
         logger.info(`POS Checkout successful`, logContext);
