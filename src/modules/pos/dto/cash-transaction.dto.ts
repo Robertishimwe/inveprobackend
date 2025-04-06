@@ -34,4 +34,9 @@ export class CashTransactionDto {
     @MaxLength(255)
     @IsOptional()
     notes?: string;
+
+
+    @IsString()
+    @IsOptional()
+    relatedOrderId?: string;
 }
