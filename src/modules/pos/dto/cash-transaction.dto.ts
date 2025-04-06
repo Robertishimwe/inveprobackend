@@ -35,8 +35,4 @@ export class CashTransactionDto {
     @IsOptional()
     notes?: string;
 
-
-    @IsString()
-    @IsOptional()
-    relatedOrderId?: string;
 }
