@@ -16,6 +16,7 @@ enum TenantStatus {
   ACTIVE
   SUSPENDED
   TRIAL
+  DEACTIVATED // New status for soft delete
 }
 
 enum ProductType {
@@ -140,6 +141,7 @@ model Tenant {
   configuration Json?        @default("{}") // Tenant-level config overrides
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
+  deactivatedAt DateTime?     @map("deactivated_at") // Optional timestamp for deactivation
 
   // Relations
   users                 User[]
@@ -174,6 +176,8 @@ model Tenant {
 
   @@unique([name])
   @@map("tenants")
+  @@index([status]) // Index status for filtering
+
 }
 
 model CustomFieldDefinition {
@@ -232,7 +236,7 @@ model PasswordResetToken {
 // Users & Access Control
 model User {
   id           String   @id @default(uuid())
-  tenantId     String   @map("tenant_id")
+  tenantId     String?   @map("tenant_id")
   email        String   @unique
   passwordHash String   @map("password_hash")
   firstName    String?  @map("first_name")
@@ -242,7 +246,8 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+ // tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull) // Use SetNull onDelete
   roles                 UserRole[] // Many-to-many relation via UserRole table
   createdPOs            PurchaseOrder[]        @relation("CreatedByUser")
   createdOrders         Order[]                @relation("CreatedByUser")

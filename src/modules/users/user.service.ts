@@ -6,6 +6,7 @@ import logger from '@/utils/logger';
 import { User, Prisma, Role } from '@prisma/client'; // Import necessary Prisma types
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUnassignedUserDto } from './dto/create-unassigned-user.dto'; // Import DTO for unassigned user creation
 
 // Helper type for user response (omitting password) including simplified roles
 export type SafeUserWithRoles = Omit<User, 'passwordHash'> & {
@@ -113,6 +114,71 @@ const createUser = async (userData: CreateUserDto, tenantId: string): Promise<Sa
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to create user.');
     }
 };
+
+// --- NEW Function for Super Admin Creating Tenant-less Users ---
+
+/**
+ * Creates a new user WITHOUT assigning them to a tenant initially.
+ * Intended ONLY for Super Admin use, typically before assigning the user to a new tenant.
+ * Ensures global email uniqueness.
+ * @param {CreateUnassignedUserDto} userData - Data for the new tenant-less user.
+ * @returns {Promise<SafeUserWithRoles>} The created user object (will have empty roles array and null tenantId).
+ */
+const createUnassignedUser = async (userData: CreateUnassignedUserDto): Promise<SafeUserWithRoles> => {
+    const lowerCaseEmail = userData.email.toLowerCase();
+    const logContext: LogContext = { function: 'createUnassignedUser', email: lowerCaseEmail, isSuperAdminAction: true };
+
+    // 1. Check global email uniqueness
+    const globalEmailExists = await prisma.user.findUnique({
+        where: { email: lowerCaseEmail },
+        select: { id: true } // Just check existence
+    });
+    if (globalEmailExists) {
+        logger.warn(`Unassigned user creation failed: Email already exists globally`, logContext);
+        throw new ApiError(httpStatus.CONFLICT, 'Email address already in use.');
+    }
+
+    // 2. Hash the password
+    const passwordHash = await bcrypt.hash(userData.password, 10);
+
+    // 3. Create the user with tenantId explicitly set to null
+    try {
+        const createdUser = await prisma.user.create({
+            data: {
+                tenant: undefined, // Explicitly set tenant to null to satisfy the type
+                email: lowerCaseEmail,
+                passwordHash: passwordHash,
+                firstName: userData.firstName,
+                lastName: userData.lastName,
+                phoneNumber: userData.phoneNumber,
+                isActive: true, // Typically start active, can be changed later
+                // NO roles assigned here as roles are tenant-specific
+            },
+            // Select fields consistent with SafeUserWithRoles (roles will be empty array)
+            select: {
+                id: true, tenantId: true, email: true, firstName: true, lastName: true,
+                phoneNumber: true, isActive: true, createdAt: true, updatedAt: true,
+                roles: { select: { role: { select: { id: true, name: true } } } } // Select structure, will be empty
+            }
+        });
+
+        logContext.userId = createdUser.id;
+        logger.info(`Unassigned user created successfully`, logContext);
+
+        // Cast to SafeUserWithRoles (roles array will be empty)
+        return { ...createdUser, roles: [] } as SafeUserWithRoles;
+
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error creating unassigned user in database`, logContext);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+             // Unique constraint likely on email
+             throw new ApiError(httpStatus.CONFLICT, 'Email address already in use (constraint violation).');
+        }
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to create unassigned user.');
+    }
+};
+
 
 /**
  * Query for users within a specific tenant with pagination, filtering, and sorting.
@@ -350,6 +416,7 @@ export const userService = {
   deleteUserById,
   assignRoleToUser, // Added
   removeRoleFromUser, // Added
+  createUnassignedUser
 };
 
 

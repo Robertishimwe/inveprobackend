@@ -19,6 +19,14 @@ const createUser = catchAsync(async (req: Request, res: Response) => {
     res.status(httpStatus.CREATED).send(user);
 });
 
+
+const createUnassignedUser = catchAsync(async (req: Request, res: Response) => {
+    // Permission 'user:create:any' or 'user:create:tenantless' assumed checked by middleware
+    // req.body validated against CreateUnassignedUserDto by middleware
+    const user = await userService.createUnassignedUser(req.body);
+    res.status(httpStatus.CREATED).send(user);
+});
+
 /**
  * Controller to handle querying multiple users with filters and pagination.
  */
@@ -213,7 +221,8 @@ export const userController = {
     updateUser,
     deleteUser, 
     assignRole, 
-    removeRole, 
+    removeRole,
+    createUnassignedUser
 };
 
 

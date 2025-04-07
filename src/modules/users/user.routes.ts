@@ -7,6 +7,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { authMiddleware } from '@/middleware/auth.middleware';
 import { ensureTenantContext } from '@/middleware/tenant.middleware';
 import { checkPermissions } from '@/middleware/rbac.middleware';
+import { CreateUnassignedUserDto } from './dto/create-unassigned-user.dto'; // Import the new DTO
 
 const router = express.Router();
 
@@ -24,6 +25,14 @@ router.route('/')
     .get(
         checkPermissions(['user:read:any']), // Use specific read permission
         userController.getUsers
+    );
+
+router.post(
+        '/unassigned', // Specific sub-path for this action
+        // No ensureTenantContext here, as super admin might operate outside tenant scope
+        checkPermissions(['user:create:any']), // Requires a specific Super Admin permission
+        validateRequest(CreateUnassignedUserDto), // Validate specific DTO
+        userController.createUnassignedUser // Call dedicated controller
     );
 
 router.route('/:userId')
