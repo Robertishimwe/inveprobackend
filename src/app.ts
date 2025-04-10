@@ -25,6 +25,7 @@ import locationRoutes from '@/modules/location/location.routes';
 import categoryRoutes from '@/modules/category/category.routes';
 import permissionRoutes from '@/modules/permissions/permission.routes';
 import roleRoutes from '@/modules/roles/role.routes';
+import tenantsRoutes from '@/modules/tenants/tenant.routes'; // Assuming you have a tenants module
 import purchaseOrderRoutes from '@/modules/purchase-order/purchase-order.routes';
 // Add imports for any other modules (e.g., reporting)
 
@@ -87,13 +88,14 @@ apiRouter.use('/orders', orderRoutes);
 apiRouter.use('/pos', posRoutes);
 apiRouter.use('/customers', customerRoutes);
 apiRouter.use('/suppliers', supplierRoutes);
-// Mount other module routers here...
+// Mount other module routers here....
 apiRouter.use('/locations', locationRoutes);
 apiRouter.use('/categories', categoryRoutes);
 apiRouter.use('/customer-group', customerGroupRoutes);
 apiRouter.use('/purchase-orders', purchaseOrderRoutes);
 apiRouter.use('/permissions', permissionRoutes);
 apiRouter.use('/roles', roleRoutes);  
+apiRouter.use('/tenants', tenantsRoutes); // Assuming you have a tenants module
 
 app.use('/api/v1', apiRouter);
 
