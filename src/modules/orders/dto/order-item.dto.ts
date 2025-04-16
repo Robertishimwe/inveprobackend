@@ -26,4 +26,7 @@ export class CreateOrderItemDto {
 
     @IsString() @IsOptional() notes?: string;
     // customAttributes could be added if needed per line item
+    discountAmount?: number; // $ amount discount for this line
+    discountPercent?: number; // % discount (e.g., 0.10 for 10%) for this line
+    
 }

@@ -41,6 +41,7 @@ enum InventoryTransactionType {
   TRANSFER_IN
   CYCLE_COUNT
   RETURN_RESTOCK // Restocking from a return
+  RETURN_DISPOSE
   KIT_ASSEMBLY_CONSUME // Consuming components
   KIT_ASSEMBLY_PRODUCE // Producing kit
 }
@@ -141,7 +142,7 @@ model Tenant {
   configuration Json?        @default("{}") // Tenant-level config overrides
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
-  deactivatedAt DateTime?     @map("deactivated_at") // Optional timestamp for deactivation
+  deactivatedAt DateTime?    @map("deactivated_at") // Optional timestamp for deactivation
 
   // Relations
   users                 User[]
@@ -175,9 +176,8 @@ model Tenant {
   // posSessionTransactions PoysSessionTransaction[] // Removed - Inferred via PosSession
 
   @@unique([name])
-  @@map("tenants")
   @@index([status]) // Index status for filtering
-
+  @@map("tenants")
 }
 
 model CustomFieldDefinition {
@@ -200,43 +200,42 @@ model CustomFieldDefinition {
 
 // --- Add Refresh Token Model ---
 model RefreshToken {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  tokenHash String   @unique @map("token_hash") // Store hash of the token, not the token itself
-  userAgent String?  @map("user_agent") // Optional: Associate with user agent
-  ipAddress String?  @map("ip_address") // Optional: Associate with IP
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash") // Store hash of the token, not the token itself
+  userAgent String?   @map("user_agent") // Optional: Associate with user agent
+  ipAddress String?   @map("ip_address") // Optional: Associate with IP
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
   revokedAt DateTime? @map("revoked_at") // Timestamp when token was revoked (e.g., logout, reuse detected)
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("refresh_tokens")
   @@index([userId])
   @@index([expiresAt])
+  @@map("refresh_tokens")
 }
-
 
 // --- Add Password Reset Token Model ---
 model PasswordResetToken {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  tokenHash String   @unique @map("token_hash") // Store hash of the reset token
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  usedAt    DateTime? @map("used_at")    // Timestamp when token was used
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash") // Store hash of the reset token
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  usedAt    DateTime? @map("used_at") // Timestamp when token was used
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@map("password_reset_tokens")
   @@index([userId])
   @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // Users & Access Control
 model User {
   id           String   @id @default(uuid())
-  tenantId     String?   @map("tenant_id")
+  tenantId     String?  @map("tenant_id")
   email        String   @unique
   passwordHash String   @map("password_hash")
   firstName    String?  @map("first_name")
@@ -246,8 +245,8 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
- // tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenant                Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull) // Use SetNull onDelete
+  // tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull) // Use SetNull onDelete
   roles                 UserRole[] // Many-to-many relation via UserRole table
   createdPOs            PurchaseOrder[]        @relation("CreatedByUser")
   createdOrders         Order[]                @relation("CreatedByUser")
@@ -467,6 +466,7 @@ model Location {
   orders               Order[] // Sale/fulfillment location for Orders
   posSessions          PosSession[]
   returnRestockItems   ReturnItem[] // Location where returned items are restocked
+  return               Return[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -729,7 +729,7 @@ model PurchaseOrderItem {
   quantityReceived Decimal   @default(0) @map("quantity_received") @db.Decimal(19, 4)
   unitCost         Decimal   @map("unit_cost") @db.Decimal(19, 4)
   taxRate          Decimal   @default(0) @map("tax_rate") @db.Decimal(5, 4)
-  taxAmount        Decimal   @default(0) @db.Decimal(19, 4) @map("tax_amount")
+  taxAmount        Decimal   @default(0) @map("tax_amount") @db.Decimal(19, 4)
   lineTotal        Decimal   @map("line_total") @db.Decimal(19, 4) // Calculated
   receivedAt       DateTime? @map("received_at") // Last received date for this item
   notes            String?
@@ -783,6 +783,7 @@ model Customer {
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customerGroup CustomerGroup? @relation(fields: [customerGroupId], references: [id], onDelete: SetNull)
   orders        Order[]
+  return  Return[]
   // addresses            CustomerAddress[] // Could have a separate address table if needed
 
   @@unique([tenantId, email], name: "unique_tenant_email") // Assuming email is main identifier per tenant (if not null)
@@ -826,9 +827,10 @@ model Order {
   items                  OrderItem[]
   payments               Payment[]
   inventoryTransactions  InventoryTransaction[] // Link stock deduction transactions
-  returns                Return[]                @relation("OriginalOrderReturns") // Returns associated with this order
+  //returns                Return[]                @relation("OriginalOrderReturns") // Returns associated with this order
   returnForExchange      Return?                 @relation("ExchangeOrderReturn") // If this order is an exchange for a return (changed to one-to-one? check logic)
   posSessionTransactions PosSessionTransaction[] // <<< Added this inverse relation
+  initiatedReturns       Return[]                @relation("OriginalOrderReturns")
 
   @@unique([tenantId, orderNumber])
   @@index([tenantId])
@@ -884,10 +886,12 @@ model Payment {
   paymentDate          DateTime      @default(now()) @map("payment_date")
   processedByUserId    String?       @map("processed_by_user_id")
   notes                String?
+  returnId             String?
 
   // tenant                Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
   order           Order @relation(fields: [orderId], references: [id], onDelete: Cascade) // Payments tied to order lifecycle
   processedByUser User? @relation("ProcessedByUser", fields: [processedByUserId], references: [id], onDelete: SetNull)
+  return          Return? @relation("RefundPayments", fields: [returnId], references: [id]) // Relation using returnId
 
   @@index([orderId])
   @@index([status])
@@ -907,13 +911,19 @@ model Return {
   reason            String?
   processedByUserId String?      @map("processed_by_user_id")
   totalRefundAmount Decimal?     @map("total_refund_amount") @db.Decimal(19, 4)
+  locationId        String
+  customerId        String?
+  
   status            ReturnStatus
 
   tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Keep this direct relation
   originalOrder   Order        @relation("OriginalOrderReturns", fields: [originalOrderId], references: [id], onDelete: Restrict) // Don't delete order if returns exist
   exchangeOrder   Order?       @relation("ExchangeOrderReturn", fields: [returnOrderId], references: [id], onDelete: SetNull) // Link to the new order created for the exchange
   processedByUser User?        @relation("CreatedByUser", fields: [processedByUserId], references: [id], onDelete: SetNull) // Changed relation name for consistency with User model
+  location        Location?    @relation(fields: [locationId], references: [id])
+  customer        Customer?    @relation(fields: [customerId], references: [id])
   items           ReturnItem[]
+  refundPayments  Payment[]    @relation("RefundPayments") // Add this relation
 
   @@index([tenantId])
   @@index([originalOrderId])
@@ -926,7 +936,7 @@ model ReturnItem {
   id                  String               @id @default(uuid())
   tenantId            String               @map("tenant_id") // Keep tenantId for potential scoping/filtering
   returnId            String               @map("return_id")
-  originalOrderItemId String               @map("original_order_item_id")
+  originalOrderItemId String?              @map("original_order_item_id")
   productId           String               @map("product_id")
   quantity            Decimal              @db.Decimal(19, 4)
   unitRefundAmount    Decimal?             @map("unit_refund_amount") @db.Decimal(19, 4)
@@ -934,10 +944,12 @@ model ReturnItem {
   condition           ReturnItemCondition? // 'sellable', 'damaged', 'defective'
   lotNumber           String?              @map("lot_number") // Lot being returned
   serialNumber        String?              @map("serial_number") // Serial being returned
+  lineRefundAmount    Decimal?             @map("line_refund_amount") @db.Decimal(19, 4)
+  restock             Boolean  // Add this field
 
   // tenant                Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
   returnRequest         Return                 @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  originalOrderItem     OrderItem              @relation(fields: [originalOrderItemId], references: [id], onDelete: Restrict) // Keep link to original sale item
+  originalOrderItem     OrderItem?             @relation(fields: [originalOrderItemId], references: [id], onDelete: SetNull)
   product               Product                @relation(fields: [productId], references: [id], onDelete: Restrict)
   restockLocation       Location?              @relation(fields: [restockLocationId], references: [id], onDelete: SetNull)
   inventoryTransactions InventoryTransaction[] // Link restock/disposal inventory transactions
