@@ -4,38 +4,18 @@ import httpStatus from 'http-status';
 import { returnService } from './return.service'; // Import the return service
 import catchAsync from '@/utils/catchAsync';
 import ApiError from '@/utils/ApiError';
-import pick from '@/utils/pick'; // For filtering/pagination query params
+import pick from '@/utils/pick'; // Utility for filtering/pagination query params
 import { getTenantIdFromRequest } from '@/middleware/tenant.middleware'; // Helper to get tenantId
-import { Prisma, ReturnStatus } from '@prisma/client'; // Import Prisma types and enums
+import { Prisma, ReturnStatus } from '@prisma/client'; // Import Prisma types and enums for filtering/sorting
 
 /**
- * Controller to handle processing a new return (linked or blind).
+ * Controller to handle initiating/creating a new return.
  */
-const processReturn = catchAsync(async (req: Request, res: Response) => {
-    const tenantId = getTenantIdFromRequest(req);
-    const userId = req.user!.id; // Assumes authMiddleware ensures user exists
-
-    // Get Location ID and optional Session ID from request context (e.g., headers)
-    // These identify the physical point where the return is happening.
-    const locationId = req.header('X-Location-Id');
-    const posSessionId = req.header('X-Session-Id'); // May be null/undefined if not a POS return
-
-    if (!locationId) {
-        // Location is crucial for knowing where stock should be adjusted (if restocked)
-        throw new ApiError(httpStatus.BAD_REQUEST, 'X-Location-Id header is required for processing returns.');
-    }
-    // TODO: Add validation here or in middleware to ensure the provided locationId is valid for the tenant.
-
-    // req.body is validated CreateReturnDto by middleware
-    const returnRecord = await returnService.processReturn(
-        req.body,
-        tenantId,
-        userId,
-        locationId, // Pass the location where return is happening
-        posSessionId ?? null // Pass session ID if available
-    );
-
-    // Return the details of the processed return
+const createReturn = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req); // Tenant scope from auth
+    const userId = req.user!.id; // User processing the return (from auth)
+    // req.body validated against CreateReturnDto by middleware
+    const returnRecord = await returnService.createReturn(req.body, tenantId, userId);
     res.status(httpStatus.CREATED).send(returnRecord);
 });
 
@@ -47,14 +27,14 @@ const getReturns = catchAsync(async (req: Request, res: Response) => {
 
     // Define allowed filters from query parameters
     const filterParams = pick(req.query, [
-        'originalOrderId', // Filter by the original sales order ID
+        'originalOrderId', // Filter by original order ID
         'customerId',      // Filter by customer ID
         'locationId',      // Filter by location where return was processed
-        'userId',          // Filter by user who processed the return (processedByUserId)
+        'userId',          // Filter by user who processed it
         'status',          // Filter by exact return status
-        'returnOrderNumber',// Filter by return number (contains)
+        'returnNumber',    // Filter by return number (contains)
         'dateFrom',        // Filter by return date >= dateFrom
-        'dateTo'           // Filter by return date <= dateTo
+        'dateTo',          // Filter by return date <= dateTo
     ]);
     // Define allowed options for sorting and pagination
     const options = pick(req.query, ['sortBy', 'limit', 'page']);
@@ -66,13 +46,13 @@ const getReturns = catchAsync(async (req: Request, res: Response) => {
     if (filterParams.customerId) filter.customerId = filterParams.customerId as string;
     if (filterParams.locationId) filter.locationId = filterParams.locationId as string;
     if (filterParams.userId) filter.processedByUserId = filterParams.userId as string;
+    if (filterParams.returnNumber) filter.returnNumber = { contains: filterParams.returnNumber as string, mode: 'insensitive' };
     // Validate status against enum values
     if (filterParams.status && Object.values(ReturnStatus).includes(filterParams.status as ReturnStatus)) {
          filter.status = filterParams.status as ReturnStatus;
     } else if (filterParams.status) {
          throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(ReturnStatus).join(', ')}`);
     }
-    if (filterParams.returnOrderNumber) filter.returnOrderId = { contains: filterParams.returnOrderNumber as string, mode: 'insensitive' };
 
     // Date filtering for returnDate
      if (filterParams.dateFrom || filterParams.dateTo) {
@@ -81,7 +61,7 @@ const getReturns = catchAsync(async (req: Request, res: Response) => {
             if (filterParams.dateFrom) filter.returnDate.gte = new Date(filterParams.dateFrom as string);
             if (filterParams.dateTo) filter.returnDate.lte = new Date(filterParams.dateTo as string);
         } catch (e) {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for date filters. Use ISO 8601 format.');
+             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for return date filters. Use ISO 8601 format.');
         }
     }
 
@@ -92,10 +72,10 @@ const getReturns = catchAsync(async (req: Request, res: Response) => {
             const [key, order] = sortOption.split(':');
             if (key && (order === 'asc' || order === 'desc')) {
                 // Add valid sortable fields for Return model
-                if (['returnOrderNumber', 'returnDate', 'status', 'totalRefundAmount', 'createdAt'].includes(key)) {
+                if (['returnNumber', 'returnDate', 'status', 'totalRefundAmount', 'createdAt', 'updatedAt'].includes(key)) {
                     orderBy.push({ [key]: order });
                 }
-                // Add sorting by related fields if needed
+                // Example sorting by related field name
                 // else if (key === 'customerName') { orderBy.push({ customer: { lastName: order } }, { customer: { firstName: order } }); }
                 // else if (key === 'locationName') { orderBy.push({ location: { name: order } }); }
             }
@@ -123,14 +103,13 @@ const getReturns = catchAsync(async (req: Request, res: Response) => {
 });
 
 /**
- * Controller to handle fetching a single return by its ID.
+ * Controller to handle fetching a single return by ID.
  */
 const getReturn = catchAsync(async (req: Request, res: Response) => {
     const tenantId = getTenantIdFromRequest(req);
     const returnId = req.params.returnId; // Return ID from URL parameter
 
-    // Optional: Permission checks
-    // Middleware `checkPermissions(['order:read:any'])` or specific 'return:read' handles basic check
+    // Permission check ('order:manage:returns' or 'return:read') handled by middleware
 
     const returnRecord = await returnService.getReturnById(returnId, tenantId);
     if (!returnRecord) {
@@ -139,10 +118,34 @@ const getReturn = catchAsync(async (req: Request, res: Response) => {
     res.status(httpStatus.OK).send(returnRecord);
 });
 
+/**
+ * Controller to handle updating a return's status or notes.
+ */
+const updateReturn = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req);
+    const returnId = req.params.returnId;
+    const userId = req.user!.id; // User performing the update
+    // req.body is validated UpdateReturnDto by middleware
+    const { status, notes } = req.body; // Extract validated data
 
-// Export all controller methods
+    // Ensure at least status or notes is provided for update
+    if (status === undefined && notes === undefined) {
+         throw new ApiError(httpStatus.BAD_REQUEST, 'At least status or notes must be provided for update.');
+    }
+
+    // Permission check ('order:manage:returns' or 'return:update') handled by middleware
+
+    // Service function handles status transition validation
+    const returnRecord = await returnService.updateReturnStatus(returnId, status!, tenantId, userId, notes); // Pass validated status and optional notes
+    res.status(httpStatus.OK).send(returnRecord);
+});
+
+
+// Export all controller methods for returns
 export const returnController = {
-    processReturn,
+    createReturn,
     getReturns,
     getReturn,
+    updateReturn, // Primarily for status updates/notes
+    // Add controllers for specific actions like approveReturn, rejectReturn, completeReturn if needed
 };

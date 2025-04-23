@@ -1,83 +1,94 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
+// ======================================================================
+// == Configuration ==
+// ======================================================================
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "postgresql" // Using PostgreSQL
   url      = env("DATABASE_URL")
+  // Optional: Add relationMode = "prisma" if not using foreign keys at DB level,
+  // but foreign keys are generally recommended for relational integrity.
+  // relationMode = "prisma"
 }
 
-// --- Enums ---
-// ... (Enums remain the same) ...
+// ======================================================================
+// == Enums ==
+// ======================================================================
+
 enum TenantStatus {
-  ACTIVE
-  SUSPENDED
-  TRIAL
-  DEACTIVATED // New status for soft delete
+  ACTIVE    // Standard operational status
+  SUSPENDED // Temporarily disabled, logins blocked
+  TRIAL     // Trial period status
+  DEACTIVATED // Soft deleted, logins blocked, prepared for archival/deletion
 }
 
 enum ProductType {
-  STANDARD
-  KIT
-  BUNDLE
-  SERVICE
+  STANDARD // A regular physical item tracked in inventory
+  KIT      // A bundle sold as one unit, composed of other STANDARD products (stock deducted from components)
+  BUNDLE   // Similar to KIT, often used interchangeably or for non-stock groupings
+  SERVICE  // A non-physical item/service, not tracked in inventory
 }
 
 enum LocationType {
-  WAREHOUSE
-  STORE
-  VIRTUAL // e.g., for dropshipping or non-physical stock
+  WAREHOUSE // Distribution center, typically not customer-facing
+  STORE     // Retail store, customer-facing
+  VIRTUAL   // Represents stock held elsewhere (e.g., dropshipper, consignment) or non-physical locations
 }
 
+// Describes the reason for an inventory change
 enum InventoryTransactionType {
-  PURCHASE_RECEIPT
-  SALE
-  ADJUSTMENT_IN // Positive adjustment
-  ADJUSTMENT_OUT // Negative adjustment
-  TRANSFER_OUT
-  TRANSFER_IN
-  CYCLE_COUNT
-  RETURN_RESTOCK // Restocking from a return
-  RETURN_DISPOSE
-  KIT_ASSEMBLY_CONSUME // Consuming components
-  KIT_ASSEMBLY_PRODUCE // Producing kit
+  PURCHASE_RECEIPT     // Receiving stock from a Purchase Order
+  SALE                 // Selling stock via an Order/POS
+  ADJUSTMENT_IN        // Manual positive stock adjustment (e.g., found stock, data correction)
+  ADJUSTMENT_OUT       // Manual negative stock adjustment (e.g., damage, theft, correction)
+  TRANSFER_OUT         // Stock leaving a location for transfer
+  TRANSFER_IN          // Stock arriving at a location from transfer
+  CYCLE_COUNT_ADJUSTMENT // Adjustment resulting from a stock count variance (replaces plain ADJUSTMENT_* for counts)
+  RETURN_RESTOCK       // Restocking a sellable returned item
+  RETURN_DISPOSE       // Disposing of a non-sellable returned item (stock adjustment out)
+  KIT_ASSEMBLY_CONSUME // Consuming component stock when building a KIT
+  KIT_ASSEMBLY_PRODUCE // Producing (adding stock of) a KIT product
+  // Consider adding STOCK_COUNT_SNAPSHOT for recording counted qty before adjustment?
 }
 
 enum TransferStatus {
-  PENDING
-  IN_TRANSIT
-  COMPLETED
-  CANCELLED
+  PENDING      // Request created, not yet shipped
+  IN_TRANSIT   // Items have left the source location
+  PARTIAL      // Partially received at destination (Optional, can just use IN_TRANSIT until fully received)
+  COMPLETED    // All items received at destination
+  CANCELLED    // Transfer cancelled before completion
 }
 
 enum PurchaseOrderStatus {
-  DRAFT
-  PENDING_APPROVAL
-  APPROVED
-  SENT
-  PARTIALLY_RECEIVED
-  FULLY_RECEIVED
-  CANCELLED
+  DRAFT             // PO created but not finalized/submitted
+  PENDING_APPROVAL  // PO submitted, awaiting manager/admin approval (optional step)
+  APPROVED          // PO approved, ready to be sent
+  SENT              // PO sent to the supplier
+  PARTIALLY_RECEIVED// Some, but not all, items have been received
+  FULLY_RECEIVED    // All items have been received
+  CANCELLED         // PO cancelled
 }
 
 enum OrderType {
-  POS
-  WEB
-  PHONE
-  MANUAL
+  POS    // Point of Sale transaction
+  WEB    // Order from an e-commerce website
+  PHONE  // Order taken over the phone
+  MANUAL // Order created manually by staff
 }
 
 enum OrderStatus {
-  PENDING_PAYMENT // Initial state, or for deferred payment
-  PROCESSING // Payment received, inventory allocated/picked
-  SHIPPED // Relevant for non-POS orders
-  COMPLETED // Transaction finished (picked up, shipped and delivered, etc.)
-  CANCELLED
-  RETURNED // Fully returned
-  PARTIALLY_RETURNED
+  PENDING_PAYMENT    // Awaiting payment confirmation (e.g., online checkout)
+  PROCESSING         // Payment confirmed, order being prepared/fulfilled (inventory allocated/picked)
+  SHIPPED            // Order has been shipped (for non-POS orders)
+  COMPLETED          // Order fulfilled (picked up, delivered, or POS transaction finished)
+  CANCELLED          // Order was cancelled before completion
+  RETURNED           // All items in the order have been returned
+  PARTIALLY_RETURNED // Some items in the order have been returned
 }
 
 enum PaymentMethod {
@@ -92,57 +103,59 @@ enum PaymentMethod {
 }
 
 enum PaymentStatus {
-  PENDING
-  COMPLETED
-  FAILED
-  REFUNDED
-  PARTIALLY_REFUNDED
+  PENDING   // Payment initiated but not confirmed
+  COMPLETED // Payment successful
+  FAILED    // Payment attempt failed
+  REFUNDED  // Payment fully refunded
+  PARTIALLY_REFUNDED // Payment partially refunded
 }
 
 enum ReturnStatus {
-  PENDING
-  APPROVED // Return accepted
-  COMPLETED // Refund/exchange processed, items restocked/discarded
-  REJECTED
+  PENDING   // Return request initiated
+  APPROVED  // Return request approved, awaiting item receipt/processing
+  REJECTED  // Return request denied
+  COMPLETED // Return processed (refund/exchange issued, items handled)
 }
 
 enum ReturnItemCondition {
-  SELLABLE
-  DAMAGED
-  DEFECTIVE
-  DISPOSED
+  SELLABLE // Item can be returned to stock
+  DAMAGED  // Item is damaged but might have salvage value or specific disposal
+  DEFECTIVE// Item is defective
+  DISPOSED // Item was disposed of upon return
 }
 
 enum PosSessionStatus {
-  OPEN
-  CLOSED // Shift ended, needs reconciliation
-  RECONCILED // Counts verified
+  OPEN       // Session active, transactions can occur
+  CLOSED     // Shift ended, cash counted, awaiting reconciliation
+  RECONCILED // Counts verified, session finalized
 }
 
 enum PosTransactionType {
-  CASH_SALE // Cash received from sale
-  CASH_REFUND // Cash given for refund
-  PAY_IN // Adding cash to drawer (float)
-  PAY_OUT // Removing cash from drawer (expenses, bank deposit)
+  CASH_SALE   // Cash received from sale payment
+  CASH_REFUND // Cash given out for refund payment
+  PAY_IN      // Adding cash to drawer (float, deposit correction)
+  PAY_OUT     // Removing cash from drawer (expenses, bank deposit prep)
 }
 
 enum NotificationType {
   EMAIL
   SMS
-  SYSTEM // In-app notification
+  SYSTEM // In-app notification/feed
 }
 
-// --- Models ---
+// ======================================================================
+// == Models ==
+// ======================================================================
 
-// Core & Tenancy
+// --- Core & Tenancy ---
 model Tenant {
-  id            String       @id @default(uuid())
-  name          String
-  status        TenantStatus @default(ACTIVE)
-  configuration Json?        @default("{}") // Tenant-level config overrides
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
-  deactivatedAt DateTime?    @map("deactivated_at") // Optional timestamp for deactivation
+  id            String        @id @default(uuid())
+  name          String        @unique // Added unique constraint
+  status        TenantStatus  @default(ACTIVE)
+  configuration Json?         @default("{}")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  deactivatedAt DateTime?     @map("deactivated_at")
 
   // Relations
   users                 User[]
@@ -164,50 +177,41 @@ model Tenant {
   configurations        Configuration[]
   notificationTemplates NotificationTemplate[]
   auditLogs             AuditLog[]
-  returns               Return[] // <<< Added this inverse relation
+  returns               Return[]
 
-  // Relations removed from Tenant model as they are inferred via parent models now:
-  // inventoryTransferItems InventoryTransferItem[] // Removed - Inferred via InventoryTransfer
-  // inventoryAdjustmentItems InventoryAdjustmentItem[] // Removed - Inferred via InventoryAdjustment
-  // purchaseOrderItems    PurchaseOrderItem[] // Removed - Inferred via PurchaseOrder
-  // orderItems            OrderItem[] // Removed - Inferred via Order
-  // payments              Payment[] // Removed - Inferred via Order
-  // returnItems           ReturnItem[] // Removed - Inferred via Return
-  // posSessionTransactions PoysSessionTransaction[] // Removed - Inferred via PosSession
-
-  @@unique([name])
-  @@index([status]) // Index status for filtering
+  @@index([status])
   @@map("tenants")
 }
 
 model CustomFieldDefinition {
-  id         String   @id @default(uuid())
-  tenantId   String   @map("tenant_id")
-  entityType String   @map("entity_type") // e.g., 'product', 'customer', 'order'
-  fieldKey   String   @map("field_key")
-  label      String
-  fieldType  String   @map("field_type") // e.g., 'text', 'number', 'date', 'boolean', 'select'
-  options    Json? // For 'select' type
-  isRequired Boolean  @default(false) @map("is_required")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id          String    @id @default(uuid())
+  tenantId    String    @map("tenant_id")
+  entityType  String    @map("entity_type") // e.g., 'product', 'customer'
+  fieldKey    String    @map("field_key")   // e.g., 'material', 'warranty_days'
+  label       String    // e.g., 'Material Type', 'Warranty (Days)'
+  fieldType   String    @map("field_type")  // TEXT, NUMBER, DATE, BOOLEAN, SELECT
+  options     Json?     // For SELECT type: [{ "value": "cotton", "label": "Cotton" }, ...]
+  isRequired  Boolean   @default(false) @map("is_required")
+  createdAt   DateTime  @default(now()) @map("created_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Cannot link values directly here due to varying entity types
 
-  @@unique([tenantId, entityType, fieldKey])
-  @@index([tenantId])
+  @@unique([tenantId, entityType, fieldKey]) // Unique field key per entity type per tenant
+  @@index([tenantId, entityType])
   @@map("custom_field_definitions")
 }
 
-// --- Add Refresh Token Model ---
+// --- User & Security Models ---
 model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @unique @map("token_hash") // Store hash of the token, not the token itself
-  userAgent String?   @map("user_agent") // Optional: Associate with user agent
-  ipAddress String?   @map("ip_address") // Optional: Associate with IP
-  expiresAt DateTime  @map("expires_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-  revokedAt DateTime? @map("revoked_at") // Timestamp when token was revoked (e.g., logout, reuse detected)
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  userAgent String?  @map("user_agent")
+  ipAddress String?  @map("ip_address")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -216,14 +220,13 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-// --- Add Password Reset Token Model ---
 model PasswordResetToken {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @unique @map("token_hash") // Store hash of the reset token
-  expiresAt DateTime  @map("expires_at")
-  createdAt DateTime  @default(now()) @map("created_at")
-  usedAt    DateTime? @map("used_at") // Timestamp when token was used
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  usedAt    DateTime? @map("used_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -232,61 +235,59 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
-// Users & Access Control
 model User {
-  id           String   @id @default(uuid())
-  tenantId     String?  @map("tenant_id")
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  firstName    String?  @map("first_name")
-  lastName     String?  @map("last_name")
-  phoneNumber  String?  @map("phone_number")
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  tenantId      String?   @map("tenant_id") // Nullable for Super Admins or unassigned users
+  email         String    @unique // Email must be globally unique
+  passwordHash  String    @map("password_hash")
+  firstName     String?   @map("first_name")
+  lastName      String?   @map("last_name")
+  phoneNumber   String?   @map("phone_number")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
-  // tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull) // Use SetNull onDelete
-  roles                 UserRole[] // Many-to-many relation via UserRole table
+  tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull) // User not deleted if Tenant is
+  roles                 UserRole[]             // Assigned roles
   createdPOs            PurchaseOrder[]        @relation("CreatedByUser")
   createdOrders         Order[]                @relation("CreatedByUser")
   processedPayments     Payment[]              @relation("ProcessedByUser")
-  createdReturns        Return[]               @relation("CreatedByUser") // Name changed from ProcessedByUser for clarity based on Return model
+  createdReturns        Return[]               @relation("CreatedByUser")
   posSessions           PosSession[]           @relation("ManagedByUser")
   auditLogs             AuditLog[]             @relation("ActionByUser")
   inventoryTransactions InventoryTransaction[] @relation("PerformedByUser")
   inventoryAdjustments  InventoryAdjustment[]  @relation("CreatedByUser")
   inventoryTransfers    InventoryTransfer[]    @relation("CreatedByUser")
-  refreshTokens         RefreshToken[]
-  passwordResetTokens   PasswordResetToken[]
+  refreshTokens         RefreshToken[]         // User's refresh tokens
+  passwordResetTokens   PasswordResetToken[]   // User's password reset tokens
 
-  @@index([tenantId])
+  @@index([tenantId]) // Index nullable FK
   @@index([email])
   @@map("users")
 }
 
 model Role {
-  id           String   @id @default(uuid())
-  tenantId     String   @map("tenant_id")
-  name         String
-  description  String?
-  isSystemRole Boolean  @default(false) @map("is_system_role") // Cannot be deleted by tenant
-  createdAt    DateTime @default(now()) @map("created_at")
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  name          String
+  description   String?
+  isSystemRole  Boolean  @default(false) @map("is_system_role")
+  createdAt     DateTime @default(now()) @map("created_at")
 
-  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  users       UserRole[] // Many-to-many relation via UserRole table
-  permissions RolePermission[] // Many-to-many relation via RolePermission table
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade) // Roles deleted if tenant deleted
+  users         UserRole[]       // Users assigned this role
+  permissions   RolePermission[] // Permissions granted by this role
 
-  @@unique([tenantId, name])
+  @@unique([tenantId, name]) // Role name unique per tenant
   @@index([tenantId])
   @@map("roles")
 }
 
 model Permission {
   id            String           @id @default(uuid())
-  permissionKey String           @unique @map("permission_key") // e.g., 'product:create', 'order:read'
+  permissionKey String           @unique @map("permission_key") // e.g., 'product:create'
   description   String?
-  roles         RolePermission[] // Many-to-many relation via RolePermission table
+  roles         RolePermission[] // Roles that include this permission
 
   @@map("permissions")
 }
@@ -297,11 +298,11 @@ model UserRole {
   roleId     String   @map("role_id")
   assignedAt DateTime @default(now()) @map("assigned_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade) // Delete assignment if user deleted
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade) // Delete assignment if role deleted
 
-  @@id([userId, roleId])
-  @@index([roleId]) // Index foreign keys
+  @@id([userId, roleId]) // Composite primary key
+  @@index([roleId])
   @@map("user_roles")
 }
 
@@ -311,15 +312,15 @@ model RolePermission {
   permissionId String   @map("permission_id")
   assignedAt   DateTime @default(now()) @map("assigned_at")
 
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade) // Delete assignment if role deleted
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade) // Delete assignment if permission deleted (less likely)
 
-  @@id([roleId, permissionId])
-  @@index([permissionId]) // Index foreign keys
+  @@id([roleId, permissionId]) // Composite primary key
+  @@index([permissionId])
   @@map("role_permissions")
 }
 
-// Products & Catalog
+// --- Product & Catalog Models ---
 model Category {
   id               String   @id @default(uuid())
   tenantId         String   @map("tenant_id")
@@ -330,10 +331,11 @@ model Category {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parentCategory Category?         @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: SetNull) // Avoid self-cascade issues
+  parentCategory Category?         @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: SetNull) // Allow re-parenting/making top-level if parent deleted
   subCategories  Category[]        @relation("CategoryHierarchy")
-  products       ProductCategory[] // Many-to-many relation via ProductCategory table
+  products       ProductCategory[]
 
+  @@unique([tenantId, name, parentCategoryId]) // Name unique under a specific parent (or null for top-level) per tenant
   @@index([tenantId])
   @@index([parentCategoryId])
   @@map("categories")
@@ -342,9 +344,9 @@ model Category {
 model Product {
   id                   String      @id @default(uuid())
   tenantId             String      @map("tenant_id")
-  sku                  String
-  upc                  String?
-  ean                  String?
+  sku                  String      // Stock Keeping Unit
+  upc                  String?     // Universal Product Code
+  ean                  String?     // European Article Number
   name                 String
   description          String?
   productType          ProductType @default(STANDARD) @map("product_type")
@@ -356,20 +358,20 @@ model Product {
   requiresLotTracking  Boolean     @default(false) @map("requires_lot_tracking")
   requiresExpiryDate   Boolean     @default(false) @map("requires_expiry_date")
   basePrice            Decimal?    @map("base_price") @db.Decimal(19, 4)
-  costPrice            Decimal?    @map("cost_price") @db.Decimal(19, 4) // Standard or Average Cost
+  costPrice            Decimal?    @map("cost_price") @db.Decimal(19, 4)
   taxable              Boolean     @default(true)
   weight               Decimal?    @db.Decimal(10, 4)
-  weightUnit           String?     @map("weight_unit") // kg, lb
-  dimensions           Json? // { length: x, width: y, height: z, unit: 'cm'/'in' }
+  weightUnit           String?     @map("weight_unit") // e.g., kg, lb
+  dimensions           Json?       // e.g., { "length": 10, "width": 5, "height": 2, "unit": "cm" }
   customAttributes     Json?       @default("{}") @map("custom_attributes")
   createdAt            DateTime    @default(now()) @map("created_at")
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
   tenant          Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  categories      ProductCategory[] // Many-to-many relation
-  variants        ProductVariant[] // One-to-many relation for variants
-  kitComponents   ProductComponent[]        @relation("ParentProduct") // Product as a Kit/Bundle
-  componentOfKits ProductComponent[]        @relation("ChildProduct") // Product as a component
+  categories      ProductCategory[]
+  variants        ProductVariant[]
+  kitComponents   ProductComponent[]        @relation("ParentProduct")
+  componentOfKits ProductComponent[]        @relation("ChildProduct")
   inventoryItems  InventoryItem[]
   inventoryTx     InventoryTransaction[]
   poItems         PurchaseOrderItem[]
@@ -378,13 +380,13 @@ model Product {
   adjustmentItems InventoryAdjustmentItem[]
   transferItems   InventoryTransferItem[]
 
-  @@unique([tenantId, sku])
+  @@unique([tenantId, sku]) // SKU unique per tenant
   @@index([tenantId])
-  @@index([name])
+  @@index([name]) // Index name for searching
+  @@index([isActive])
   @@map("products")
 }
 
-// Join table for Product <-> Category (Many-to-Many)
 model ProductCategory {
   productId  String   @map("product_id")
   categoryId String   @map("category_id")
@@ -398,17 +400,16 @@ model ProductCategory {
   @@map("product_categories")
 }
 
-// Optional: For products with variations like size/color
 model ProductVariant {
   id               String   @id @default(uuid())
-  tenantId         String   @map("tenant_id") // Needed for direct queries potentially
+  tenantId         String   @map("tenant_id")
   productId        String   @map("product_id")
-  sku              String
+  sku              String   // Variant-specific SKU
   upc              String?
   ean              String?
-  name             String? // e.g., "T-Shirt - Red, Large" (can be auto-generated)
-  attributes       Json // { "color": "Red", "size": "Large" } - Indexed for searching variations
-  priceModifier    Decimal  @default(0) @map("price_modifier") @db.Decimal(19, 4) // Add/subtract from base product price
+  name             String?  // Auto-generated or specific variant name
+  attributes       Json     // e.g., { "color": "Red", "size": "Large" }
+  priceModifier    Decimal  @default(0) @map("price_modifier") @db.Decimal(19, 4)
   costModifier     Decimal  @default(0) @map("cost_modifier") @db.Decimal(19, 4)
   weightModifier   Decimal  @default(0) @map("weight_modifier") @db.Decimal(10, 4)
   customAttributes Json?    @default("{}") @map("custom_attributes")
@@ -416,126 +417,123 @@ model ProductVariant {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  // If variants need separate inventory tracking, link InventoryItem here instead of Product
-  // @@index([attributes], type: Gin) // Commented out: Check if your DB supports GIN index on JSONB
 
   @@unique([productId, sku]) // Variant SKU unique per base product
-  @@index([tenantId]) // Facilitate tenant-wide variant search if needed
+  @@index([tenantId])
+  // @@index([attributes], type: Gin) // Consider adding GIN index if querying attributes heavily
   @@map("product_variants")
 }
 
-// For Kits/Bundles
 model ProductComponent {
   id              String   @id @default(uuid())
-  tenantId        String   @map("tenant_id") // Needed for direct queries
+  tenantId        String   @map("tenant_id")
   parentProductId String   @map("parent_product_id") // The Kit/Bundle product
   childProductId  String   @map("child_product_id") // The component product
-  quantity        Decimal  @db.Decimal(10, 4) // Quantity of child needed for 1 parent
+  quantity        Decimal  @db.Decimal(10, 4)      // Quantity of child needed for 1 parent
   createdAt       DateTime @default(now()) @map("created_at")
 
-  parentProduct Product @relation("ParentProduct", fields: [parentProductId], references: [id], onDelete: Cascade)
-  childProduct  Product @relation("ChildProduct", fields: [childProductId], references: [id], onDelete: Restrict) // Prevent deleting component if used in kit
-
+  parentProduct Product @relation("ParentProduct", fields: [parentProductId], references: [id], onDelete: Cascade) // If kit deleted, component links deleted
+  childProduct  Product @relation("ChildProduct", fields: [childProductId], references: [id], onDelete: Restrict) // Prevent deleting product if it's a component
   @@unique([parentProductId, childProductId])
   @@index([tenantId])
   @@index([childProductId])
   @@map("product_components")
 }
 
-// Inventory
+// --- Inventory Models ---
 model Location {
   id               String       @id @default(uuid())
   tenantId         String       @map("tenant_id")
   parentLocationId String?      @map("parent_location_id")
   name             String
-  address          Json? // { street, city, state, postal_code, country }
-  locationType     LocationType @default(WAREHOUSE) @map("location_type")
+  address          Json?
+  locationType     LocationType @default(STORE) @map("location_type")
   isActive         Boolean      @default(true) @map("is_active")
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
 
   tenant               Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parentLocation       Location?              @relation("LocationHierarchy", fields: [parentLocationId], references: [id], onDelete: SetNull)
+  parentLocation       Location?              @relation("LocationHierarchy", fields: [parentLocationId], references: [id], onDelete: SetNull) // Don't delete children if parent deleted
   subLocations         Location[]             @relation("LocationHierarchy")
   inventoryItems       InventoryItem[]
   inventoryTx          InventoryTransaction[]
   sourceTransfers      InventoryTransfer[]    @relation("SourceLocation")
   destTransfers        InventoryTransfer[]    @relation("DestinationLocation")
   inventoryAdjustments InventoryAdjustment[]
-  purchaseOrders       PurchaseOrder[] // Delivery location for POs
-  orders               Order[] // Sale/fulfillment location for Orders
+  purchaseOrders       PurchaseOrder[]        // Delivery location
+  orders               Order[]                // Fulfillment location
   posSessions          PosSession[]
-  returnRestockItems   ReturnItem[] // Location where returned items are restocked
-  return               Return[]
+  returnRestockItems   ReturnItem[]           // Restock location
+  returns              Return[]               // Location where return was processed
 
-  @@unique([tenantId, name])
+  @@unique([tenantId, name]) // Location name unique per tenant
   @@index([tenantId])
   @@index([parentLocationId])
+  @@index([isActive])
   @@map("locations")
 }
 
-// Summarizes stock levels per product per location
 model InventoryItem {
   id                String    @id @default(uuid())
   tenantId          String    @map("tenant_id")
   productId         String    @map("product_id")
   locationId        String    @map("location_id")
   quantityOnHand    Decimal   @default(0) @map("quantity_on_hand") @db.Decimal(19, 4)
-  quantityAllocated Decimal   @default(0) @map("quantity_allocated") @db.Decimal(19, 4) // Committed to sales orders
-  quantityIncoming  Decimal   @default(0) @map("quantity_incoming") @db.Decimal(19, 4) // On purchase orders / transfers in-transit
+  quantityAllocated Decimal   @default(0) @map("quantity_allocated") @db.Decimal(19, 4)
+  quantityIncoming  Decimal   @default(0) @map("quantity_incoming") @db.Decimal(19, 4)
   reorderPoint      Decimal?  @map("reorder_point") @db.Decimal(19, 4)
   reorderQuantity   Decimal?  @map("reorder_quantity") @db.Decimal(19, 4)
-  abcCategory       String?   @map("abc_category") @db.Char(1) // A, B, C
+  abcCategory       String?   @map("abc_category") @db.Char(1)
   lastCountedAt     DateTime? @map("last_counted_at")
-  averageCost       Decimal?  @map("average_cost") @db.Decimal(19, 4) // For Moving Average valuation
+  averageCost       Decimal?  @map("average_cost") @db.Decimal(19, 4)
   customAttributes  Json?     @default("{}") @map("custom_attributes")
-  updatedAt         DateTime  @updatedAt @map("updated_at") // Tracks last inventory update time
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  product  Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
-  location Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  details  InventoryDetail[] // One-to-many relation for lot/serial details
+  product  Product           @relation(fields: [productId], references: [id], onDelete: Cascade) // If product deleted, stock level record deleted
+  location Location          @relation(fields: [locationId], references: [id], onDelete: Cascade) // If location deleted, stock level record deleted
+  details  InventoryDetail[]
 
-  @@unique([tenantId, productId, locationId])
+  @@unique([tenantId, productId, locationId]) // Unique stock record per product per location per tenant
   @@index([tenantId])
+  @@index([productId])
   @@index([locationId])
-  @@index([updatedAt]) // Useful for finding recently updated items
+  @@index([updatedAt])
   @@map("inventory_items")
 }
 
-// Tracks specific lots/serials for an InventoryItem
 model InventoryDetail {
-  id              String    @id @default(uuid())
-  tenantId        String    @map("tenant_id") // Denormalized for potential direct queries
-  inventoryItemId String    @map("inventory_item_id")
-  lotNumber       String?   @map("lot_number")
-  serialNumber    String?   @map("serial_number") // Should be unique across tenant if used
-  expiryDate      DateTime? @map("expiry_date") @db.Date
-  quantity        Decimal   @db.Decimal(19, 4) // Quantity for this specific lot/serial in this item record
-  unitCost        Decimal?  @map("unit_cost") @db.Decimal(19, 4) // Cost for this specific lot (for FIFO/LIFO layers)
-  receivedAt      DateTime  @default(now()) @map("received_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id                String    @id @default(uuid())
+  tenantId          String    @map("tenant_id")
+  inventoryItemId   String    @map("inventory_item_id")
+  lotNumber         String?   @map("lot_number")
+  serialNumber      String?   @map("serial_number")
+  expiryDate        DateTime? @map("expiry_date") @db.Date
+  quantity          Decimal   @db.Decimal(19, 4) // Quantity for this specific lot/serial/expiry instance
+  unitCost          Decimal?  @map("unit_cost") @db.Decimal(19, 4)
+  receivedAt        DateTime  @default(now()) @map("received_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade) // Delete details if parent item deleted
 
-  @@unique([tenantId, serialNumber], name: "unique_tenant_serial") // Ensure serial numbers are unique within a tenant if not null
+  @@unique([tenantId, serialNumber], name: "unique_tenant_serial") // Serial unique per tenant (if not null)
   @@index([inventoryItemId])
   @@index([tenantId])
   @@index([lotNumber])
-  @@index([expiryDate])
+  @@index([serialNumber]) // Index for searching serials
+  @@index([expiryDate]) // Index for finding expiring items
   @@map("inventory_details")
 }
 
-// The immutable log of all inventory movements
 model InventoryTransaction {
-  id                  BigInt                   @id @default(autoincrement()) @map("transaction_id")
+  id                  BigInt                   @id @default(autoincrement()) @map("transaction_id") // Use BigInt for high volume
   tenantId            String                   @map("tenant_id")
   timestamp           DateTime                 @default(now())
   productId           String                   @map("product_id")
   locationId          String                   @map("location_id")
   transactionType     InventoryTransactionType @map("transaction_type")
-  quantityChange      Decimal                  @map("quantity_change") @db.Decimal(19, 4) // Positive for increase, negative for decrease
-  unitCost            Decimal?                 @map("unit_cost") @db.Decimal(19, 4) // Cost at the time of transaction (Crucial for valuation)
+  quantityChange      Decimal                  @map("quantity_change") @db.Decimal(19, 4)
+  unitCost            Decimal?                 @map("unit_cost") @db.Decimal(19, 4)
   lotNumber           String?                  @map("lot_number")
   serialNumber        String?                  @map("serial_number")
   expiryDate          DateTime?                @map("expiry_date") @db.Date
@@ -545,13 +543,13 @@ model InventoryTransaction {
   relatedPoItemId     String?                  @map("related_po_item_id")
   relatedTransferId   String?                  @map("related_transfer_id")
   relatedAdjustmentId String?                  @map("related_adjustment_id")
-  relatedReturnItemId String?                  @map("related_return_item_id") // Link to return item for restocks
-  userId              String?                  @map("user_id") // User performing the action
+  relatedReturnItemId String?                  @map("related_return_item_id")
+  userId              String?                  @map("user_id")
   notes               String?
 
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  product             Product              @relation(fields: [productId], references: [id], onDelete: Restrict) // Don't delete product if transactions exist
-  location            Location             @relation(fields: [locationId], references: [id], onDelete: Restrict) // Don't delete location if tx exist
+  product             Product              @relation(fields: [productId], references: [id], onDelete: Restrict) // Keep transactions even if product deleted
+  location            Location             @relation(fields: [locationId], references: [id], onDelete: Restrict) // Keep transactions even if location deleted
   order               Order?               @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull)
   orderItem           OrderItem?           @relation(fields: [relatedOrderItemId], references: [id], onDelete: SetNull)
   purchaseOrder       PurchaseOrder?       @relation(fields: [relatedPoId], references: [id], onDelete: SetNull)
@@ -561,8 +559,8 @@ model InventoryTransaction {
   returnItem          ReturnItem?          @relation(fields: [relatedReturnItemId], references: [id], onDelete: SetNull)
   user                User?                @relation("PerformedByUser", fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId, timestamp]) // Crucial for time-series analysis and partitioning
-  @@index([tenantId, productId, locationId, timestamp]) // For product-location history
+  @@index([tenantId, timestamp]) // Partition key candidate
+  @@index([tenantId, productId, locationId, timestamp])
   @@index([relatedOrderId])
   @@index([relatedPoId])
   @@index([relatedTransferId])
@@ -586,11 +584,11 @@ model InventoryTransfer {
   updatedAt             DateTime       @updatedAt @map("updated_at")
 
   tenant                Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  sourceLocation        Location                @relation("SourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict)
-  destinationLocation   Location                @relation("DestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+  sourceLocation        Location                @relation("SourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict) // Don't delete location if transfers exist
+  destinationLocation   Location                @relation("DestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict) // Don't delete location if transfers exist
   createdByUser         User?                   @relation("CreatedByUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
   items                 InventoryTransferItem[]
-  inventoryTransactions InventoryTransaction[] // Can link transactions related to this transfer
+  inventoryTransactions InventoryTransaction[]
 
   @@index([tenantId])
   @@index([status])
@@ -601,22 +599,21 @@ model InventoryTransfer {
 
 model InventoryTransferItem {
   id                String  @id @default(uuid())
-  tenantId          String  @map("tenant_id") // Keep tenantId for potential scoping/filtering
+  tenantId          String  @map("tenant_id")
   transferId        String  @map("transfer_id")
   productId         String  @map("product_id")
   quantityRequested Decimal @map("quantity_requested") @db.Decimal(19, 4)
   quantityShipped   Decimal @default(0) @map("quantity_shipped") @db.Decimal(19, 4)
   quantityReceived  Decimal @default(0) @map("quantity_received") @db.Decimal(19, 4)
-  lotNumber         String? @map("lot_number") // Specific lot being transferred
-  serialNumber      String? @map("serial_number") // Specific serial being transferred
+  lotNumber         String? @map("lot_number")
+  serialNumber      String? @map("serial_number")
 
-  // tenant              Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
-  transfer InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
-  product  Product           @relation(fields: [productId], references: [id], onDelete: Restrict) // Don't delete product if in transfer
+  transfer InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade) // Delete items if transfer deleted
+  product  Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   @@index([transferId])
   @@index([productId])
-  @@index([tenantId]) // Index tenantId if you query these directly by tenant
+  @@index([tenantId])
   @@map("inventory_transfer_items")
 }
 
@@ -625,7 +622,7 @@ model InventoryAdjustment {
   tenantId        String   @map("tenant_id")
   locationId      String   @map("location_id")
   adjustmentDate  DateTime @default(now()) @map("adjustment_date") @db.Date
-  reasonCode      String?  @map("reason_code") // e.g., 'damage', 'theft', 'stock_count_correction'
+  reasonCode      String?  @map("reason_code")
   notes           String?
   createdByUserId String?  @map("created_by_user_id")
   createdAt       DateTime @default(now()) @map("created_at")
@@ -634,7 +631,7 @@ model InventoryAdjustment {
   location              Location                  @relation(fields: [locationId], references: [id], onDelete: Restrict)
   createdByUser         User?                     @relation("CreatedByUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
   items                 InventoryAdjustmentItem[]
-  inventoryTransactions InventoryTransaction[] // Link transactions related to this adjustment
+  inventoryTransactions InventoryTransaction[]
 
   @@index([tenantId])
   @@index([locationId])
@@ -644,25 +641,25 @@ model InventoryAdjustment {
 
 model InventoryAdjustmentItem {
   id             String   @id @default(uuid())
-  tenantId       String   @map("tenant_id") // Keep tenantId for potential scoping/filtering
+  tenantId       String   @map("tenant_id")
   adjustmentId   String   @map("adjustment_id")
   productId      String   @map("product_id")
-  quantityChange Decimal  @map("quantity_change") @db.Decimal(19, 4) // Positive or negative
-  unitCost       Decimal? @map("unit_cost") @db.Decimal(19, 4) // For valuation impact
+  quantityChange Decimal  @map("quantity_change") @db.Decimal(19, 4)
+  unitCost       Decimal? @map("unit_cost") @db.Decimal(19, 4)
   lotNumber      String?  @map("lot_number")
   serialNumber   String?  @map("serial_number")
 
-  // tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
   adjustment InventoryAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
   product    Product             @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   @@index([adjustmentId])
   @@index([productId])
-  @@index([tenantId]) // Index tenantId if you query these directly by tenant
+  @@index([tenantId])
   @@map("inventory_adjustment_items")
 }
 
-// Suppliers & Purchasing
+
+// --- Supplier & Purchasing Models ---
 model Supplier {
   id               String   @id @default(uuid())
   tenantId         String   @map("tenant_id")
@@ -680,15 +677,16 @@ model Supplier {
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   purchaseOrders PurchaseOrder[]
 
-  @@unique([tenantId, name]) // Assume supplier names are unique per tenant
+  @@unique([tenantId, name])
   @@index([tenantId])
+  @@index([isActive])
   @@map("suppliers")
 }
 
 model PurchaseOrder {
   id                   String              @id @default(uuid())
   tenantId             String              @map("tenant_id")
-  poNumber             String              @map("po_number") // Auto-generated or manual
+  poNumber             String              @map("po_number")
   supplierId           String              @map("supplier_id")
   locationId           String              @map("location_id") // Delivery location
   status               PurchaseOrderStatus
@@ -698,7 +696,7 @@ model PurchaseOrder {
   shippingCost         Decimal             @default(0) @map("shipping_cost") @db.Decimal(19, 4)
   subtotal             Decimal             @default(0) @db.Decimal(19, 4)
   taxAmount            Decimal             @default(0) @map("tax_amount") @db.Decimal(19, 4)
-  totalAmount          Decimal             @default(0) @map("total_amount") @db.Decimal(19, 4) // Calculated
+  totalAmount          Decimal             @default(0) @map("total_amount") @db.Decimal(19, 4)
   createdByUserId      String?             @map("created_by_user_id")
   createdAt            DateTime            @default(now()) @map("created_at")
   updatedAt            DateTime            @updatedAt @map("updated_at")
@@ -708,7 +706,7 @@ model PurchaseOrder {
   location              Location               @relation(fields: [locationId], references: [id], onDelete: Restrict)
   createdByUser         User?                  @relation("CreatedByUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
   items                 PurchaseOrderItem[]
-  inventoryTransactions InventoryTransaction[] // Link receiving transactions
+  inventoryTransactions InventoryTransaction[]
 
   @@unique([tenantId, poNumber])
   @@index([tenantId])
@@ -721,31 +719,31 @@ model PurchaseOrder {
 
 model PurchaseOrderItem {
   id               String    @id @default(uuid())
-  tenantId         String    @map("tenant_id") // Keep tenantId for potential scoping/filtering
+  tenantId         String    @map("tenant_id")
   poId             String    @map("po_id")
   productId        String    @map("product_id")
-  description      String? // Can override product name
+  description      String?
   quantityOrdered  Decimal   @map("quantity_ordered") @db.Decimal(19, 4)
   quantityReceived Decimal   @default(0) @map("quantity_received") @db.Decimal(19, 4)
   unitCost         Decimal   @map("unit_cost") @db.Decimal(19, 4)
   taxRate          Decimal   @default(0) @map("tax_rate") @db.Decimal(5, 4)
   taxAmount        Decimal   @default(0) @map("tax_amount") @db.Decimal(19, 4)
-  lineTotal        Decimal   @map("line_total") @db.Decimal(19, 4) // Calculated
-  receivedAt       DateTime? @map("received_at") // Last received date for this item
+  lineTotal        Decimal   @map("line_total") @db.Decimal(19, 4) // Calculated = quantityOrdered * unitCost (before tax)
+  receivedAt       DateTime? @map("received_at")
   notes            String?
 
-  // tenant                Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
   purchaseOrder         PurchaseOrder          @relation(fields: [poId], references: [id], onDelete: Cascade)
   product               Product                @relation(fields: [productId], references: [id], onDelete: Restrict)
-  inventoryTransactions InventoryTransaction[] // Link receiving transactions for this item
+  inventoryTransactions InventoryTransaction[]
 
   @@index([poId])
   @@index([productId])
-  @@index([tenantId]) // Index tenantId if you query these directly by tenant
+  @@index([tenantId])
   @@map("purchase_order_items")
 }
 
-// Customers
+
+// --- Customer Models ---
 model CustomerGroup {
   id          String   @id @default(uuid())
   tenantId    String   @map("tenant_id")
@@ -779,58 +777,59 @@ model Customer {
   customAttributes       Json?    @default("{}") @map("custom_attributes")
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @updatedAt @map("updated_at")
+  // Add isActive for customers? useful for disabling ordering
+  // isActive              Boolean @default(true)
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customerGroup CustomerGroup? @relation(fields: [customerGroupId], references: [id], onDelete: SetNull)
   orders        Order[]
-  return  Return[]
-  // addresses            CustomerAddress[] // Could have a separate address table if needed
+  returns       Return[]       // Link returns back to customer
 
-  @@unique([tenantId, email], name: "unique_tenant_email") // Assuming email is main identifier per tenant (if not null)
+  @@unique([tenantId, email], name: "unique_tenant_email") // Enforce unique email per tenant if not null
   @@index([tenantId])
   @@index([email])
   @@index([customerGroupId])
   @@map("customers")
 }
 
-// Orders & POS
+
+// --- Order & POS Models ---
 model Order {
-  id               String      @id @default(uuid())
-  tenantId         String      @map("tenant_id")
-  orderNumber      String      @map("order_number") // Auto-generated
-  customerId       String?     @map("customer_id") // Nullable for guest checkout
-  locationId       String      @map("location_id") // Sale location
-  posTerminalId    String?     @map("pos_terminal_id") // Identifier for the POS device
-  userId           String?     @map("user_id") // Salesperson
-  orderType        OrderType   @default(POS) @map("order_type")
-  status           OrderStatus
-  orderDate        DateTime    @default(now()) @map("order_date")
-  subtotal         Decimal     @db.Decimal(19, 4)
-  discountAmount   Decimal     @default(0) @map("discount_amount") @db.Decimal(19, 4)
-  taxAmount        Decimal     @default(0) @map("tax_amount") @db.Decimal(19, 4)
-  shippingCost     Decimal     @default(0) @map("shipping_cost") @db.Decimal(19, 4)
-  totalAmount      Decimal     @map("total_amount") @db.Decimal(19, 4)
-  currencyCode     String      @map("currency_code") @db.Char(3) // ISO 4217
-  notes            String?
-  shippingAddress  Json?       @map("shipping_address")
-  shippingMethod   String?     @map("shipping_method")
-  trackingNumber   String?     @map("tracking_number")
-  customAttributes Json?       @default("{}") @map("custom_attributes")
-  isBackordered    Boolean     @default(false) @map("is_backordered")
-  createdAt        DateTime    @default(now()) @map("created_at")
-  updatedAt        DateTime    @updatedAt @map("updated_at")
+  id                     String      @id @default(uuid())
+  tenantId               String      @map("tenant_id")
+  orderNumber            String      @map("order_number")
+  customerId             String?     @map("customer_id")
+  locationId             String      @map("location_id")
+  posTerminalId          String?     @map("pos_terminal_id")
+  userId                 String?     @map("user_id") // Salesperson/creator
+  orderType              OrderType   @default(POS) @map("order_type")
+  status                 OrderStatus
+  orderDate              DateTime    @default(now()) @map("order_date")
+  subtotal               Decimal     @db.Decimal(19, 4)
+  discountAmount         Decimal     @default(0) @map("discount_amount") @db.Decimal(19, 4) // Order-level discount
+  taxAmount              Decimal     @default(0) @map("tax_amount") @db.Decimal(19, 4) // Total order tax
+  shippingCost           Decimal     @default(0) @map("shipping_cost") @db.Decimal(19, 4)
+  totalAmount            Decimal     @map("total_amount") @db.Decimal(19, 4) // Grand total
+  currencyCode           String      @map("currency_code") @db.Char(3)
+  notes                  String?
+  shippingAddress        Json?       @map("shipping_address")
+  shippingMethod         String?     @map("shipping_method")
+  trackingNumber         String?     @map("tracking_number")
+  customAttributes       Json?       @default("{}") @map("custom_attributes")
+  isBackordered          Boolean     @default(false) @map("is_backordered")
+  createdAt              DateTime    @default(now()) @map("created_at")
+  updatedAt              DateTime    @updatedAt @map("updated_at")
 
   tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer               Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  location               Location                @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  customer               Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull) // Keep order if customer deleted
+  location               Location                @relation(fields: [locationId], references: [id], onDelete: Restrict) // Prevent location delete if orders exist
   user                   User?                   @relation("CreatedByUser", fields: [userId], references: [id], onDelete: SetNull)
   items                  OrderItem[]
-  payments               Payment[]
-  inventoryTransactions  InventoryTransaction[] // Link stock deduction transactions
-  //returns                Return[]                @relation("OriginalOrderReturns") // Returns associated with this order
-  returnForExchange      Return?                 @relation("ExchangeOrderReturn") // If this order is an exchange for a return (changed to one-to-one? check logic)
-  posSessionTransactions PosSessionTransaction[] // <<< Added this inverse relation
-  initiatedReturns       Return[]                @relation("OriginalOrderReturns")
+  payments               Payment[]               // Payments made for this order
+  inventoryTransactions  InventoryTransaction[]
+  initiatedReturns       Return[]                @relation("OriginalOrderReturns") // Returns *initiated from* this order
+  returnForExchange      Return?                 @relation("ExchangeOrderReturn") // If this order *is* an exchange *for* a return
+  posSessionTransactions PosSessionTransaction[] // Cash transactions linked to this order
 
   @@unique([tenantId, orderNumber])
   @@index([tenantId])
@@ -843,179 +842,187 @@ model Order {
 }
 
 model OrderItem {
-  id                String   @id @default(uuid())
-  tenantId          String   @map("tenant_id") // Keep tenantId for potential scoping/filtering
-  orderId           String   @map("order_id")
-  productId         String   @map("product_id")
-  productSnapshot   Json?    @map("product_snapshot") // Store product details at time of sale (name, sku, price)
-  quantity          Decimal  @db.Decimal(19, 4)
-  unitPrice         Decimal  @map("unit_price") @db.Decimal(19, 4) // Price per unit *after* item-specific discounts
-  originalUnitPrice Decimal? @map("original_unit_price") @db.Decimal(19, 4) // Price before discounts
-  discountAmount    Decimal  @default(0) @map("discount_amount") @db.Decimal(19, 4)
-  taxAmount         Decimal  @default(0) @map("tax_amount") @db.Decimal(19, 4)
-  taxRate           Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 4)
-  lineTotal         Decimal  @map("line_total") @db.Decimal(19, 4) // Calculated: (unitPrice * quantity)
-  lotNumber         String?  @map("lot_number") // Specific lot sold
-  serialNumber      String?  @map("serial_number") // Specific serial sold
-  quantityReturned  Decimal  @default(0) @map("quantity_returned") @db.Decimal(19, 4)
-  notes             String?
-  customAttributes  Json?    @default("{}") @map("custom_attributes")
+  id                  String   @id @default(uuid())
+  tenantId            String   @map("tenant_id")
+  orderId             String   @map("order_id")
+  productId           String   @map("product_id")
+  productSnapshot     Json?    @map("product_snapshot")
+  quantity            Decimal  @db.Decimal(19, 4)
+  unitPrice           Decimal  @map("unit_price") @db.Decimal(19, 4) // Price after item discount
+  originalUnitPrice   Decimal? @map("original_unit_price") @db.Decimal(19, 4) // Price before discount
+  discountAmount      Decimal  @default(0) @map("discount_amount") @db.Decimal(19, 4) // Item-level discount amount
+  taxAmount           Decimal  @default(0) @map("tax_amount") @db.Decimal(19, 4)
+  taxRate             Decimal  @default(0) @map("tax_rate") @db.Decimal(5, 4)
+  lineTotal           Decimal  @map("line_total") @db.Decimal(19, 4) // (unitPrice * quantity) - Could be pre-tax or post-tax depending on definition
+  lotNumber           String?  @map("lot_number")
+  serialNumber        String?  @map("serial_number")
+  quantityReturned    Decimal  @default(0) @map("quantity_returned") @db.Decimal(19, 4) // Tracks returned qty for this specific line
+  notes               String?
+  customAttributes    Json?    @default("{}") @map("custom_attributes")
 
-  // tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
-  order                 Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product               Product                @relation(fields: [productId], references: [id], onDelete: Restrict) // Don't delete product if in orders
-  inventoryTransactions InventoryTransaction[] // Link stock deduction transaction for this item
-  returnItems           ReturnItem[] // Link return items back to the original order item
+  order                 Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade) // Delete item if order deleted
+  product               Product                @relation(fields: [productId], references: [id], onDelete: Restrict) // Prevent product delete if on orders
+  inventoryTransactions InventoryTransaction[] // Link stock deductions
+  returnItems           ReturnItem[]           // Link returns back to this item
 
   @@index([orderId])
   @@index([productId])
-  @@index([tenantId]) // Index tenantId if you query these directly by tenant
+  @@index([tenantId])
   @@map("order_items")
 }
 
 model Payment {
   id                   String        @id @default(uuid())
-  tenantId             String        @map("tenant_id") // Keep tenantId for potential scoping/filtering
-  orderId              String        @map("order_id")
+  tenantId             String        @map("tenant_id")
+  orderId              String?       @map("order_id") // Potentially nullable if payment can exist without direct order (e.g., deposit) - Made required by FK below
   paymentMethod        PaymentMethod @map("payment_method")
-  amount               Decimal       @db.Decimal(19, 4)
-  currencyCode         String        @map("currency_code") @db.Char(3) // ISO 4217
+  amount               Decimal       @db.Decimal(19, 4) // Positive for payment, could be negative for manual refund entry?
+  currencyCode         String        @map("currency_code") @db.Char(3)
   status               PaymentStatus
-  transactionReference String?       @map("transaction_reference") // From payment processor
-  paymentDetails       Json?         @map("payment_details") // e.g., last 4 digits of card, auth code
+  transactionReference String?       @map("transaction_reference")
+  paymentDetails       Json?         @map("payment_details")
   paymentDate          DateTime      @default(now()) @map("payment_date")
   processedByUserId    String?       @map("processed_by_user_id")
   notes                String?
-  returnId             String?
+  returnId             String?       // Link to Return if this is a Refund payment
 
-  // tenant                Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
-  order           Order @relation(fields: [orderId], references: [id], onDelete: Cascade) // Payments tied to order lifecycle
-  processedByUser User? @relation("ProcessedByUser", fields: [processedByUserId], references: [id], onDelete: SetNull)
-  return          Return? @relation("RefundPayments", fields: [returnId], references: [id]) // Relation using returnId
+  order           Order? @relation(fields: [orderId], references: [id], onDelete: Cascade) // Make order required via FK, but field optional? No, needs orderId.
+  // Let's assume Payment always links to an Order or a Return, not both. If linked to Return, orderId might be null.
+  // Revised: Keep orderId required for payments, refunds are separate records or status updates.
+  // To link refund payments back: add optional field on Payment `refundedPaymentId String?`? Or use the `returnId` field.
+  // Using `returnId` field implies this Payment record *is* the refund.
+
+  processedByUser User?   @relation("ProcessedByUser", fields: [processedByUserId], references: [id], onDelete: SetNull)
+  return          Return? @relation("RefundPayments", fields: [returnId], references: [id], onDelete: SetNull) // Link to Return if this is a refund payment
 
   @@index([orderId])
+  @@index([returnId]) // Index for finding refund payments for a return
   @@index([status])
   @@index([paymentMethod])
   @@index([paymentDate])
-  @@index([tenantId]) // Index tenantId if you query these directly by tenant
+  @@index([tenantId])
   @@map("payments")
 }
 
-// Or handle returns via negative qty orders/adjustments (this is explicit)
+// --- Return Models ---
 model Return {
   id                String       @id @default(uuid())
   tenantId          String       @map("tenant_id")
+  returnNumber      String?      @unique @map("return_number") // Optional: Auto-generate a return number
   originalOrderId   String       @map("original_order_id")
-  returnOrderId     String?      @unique @map("return_order_id") // Optional link to a new order if exchange
+  returnOrderId     String?      @unique @map("return_order_id") // Link to a new Order if this was an exchange
   returnDate        DateTime     @default(now()) @map("return_date")
   reason            String?
   processedByUserId String?      @map("processed_by_user_id")
-  totalRefundAmount Decimal?     @map("total_refund_amount") @db.Decimal(19, 4)
-  locationId        String
-  customerId        String?
-  
+  totalRefundAmount Decimal?     @map("total_refund_amount") @db.Decimal(19, 4) // Calculated sum of refund payments
+  locationId        String       @map("location_id") // Location where return was processed
+  customerId        String?      @map("customer_id")
   status            ReturnStatus
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Keep this direct relation
-  originalOrder   Order        @relation("OriginalOrderReturns", fields: [originalOrderId], references: [id], onDelete: Restrict) // Don't delete order if returns exist
-  exchangeOrder   Order?       @relation("ExchangeOrderReturn", fields: [returnOrderId], references: [id], onDelete: SetNull) // Link to the new order created for the exchange
-  processedByUser User?        @relation("CreatedByUser", fields: [processedByUserId], references: [id], onDelete: SetNull) // Changed relation name for consistency with User model
-  location        Location?    @relation(fields: [locationId], references: [id])
-  customer        Customer?    @relation(fields: [customerId], references: [id])
-  items           ReturnItem[]
-  refundPayments  Payment[]    @relation("RefundPayments") // Add this relation
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  originalOrder   Order        @relation("OriginalOrderReturns", fields: [originalOrderId], references: [id], onDelete: Restrict)
+  exchangeOrder   Order?       @relation("ExchangeOrderReturn", fields: [returnOrderId], references: [id], onDelete: SetNull)
+  processedByUser User?        @relation("CreatedByUser", fields: [processedByUserId], references: [id], onDelete: SetNull)
+  location        Location     @relation(fields: [locationId], references: [id], onDelete: Restrict) // Don't delete location if returns exist
+  customer        Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull) // Keep return if customer deleted
+  items           ReturnItem[] // Items included in this return
+  refundPayments  Payment[]    @relation("RefundPayments") // Refund payments issued for this return
 
   @@index([tenantId])
   @@index([originalOrderId])
   @@index([returnOrderId])
+  @@index([locationId])
+  @@index([customerId])
   @@index([status])
   @@map("returns")
 }
 
 model ReturnItem {
   id                  String               @id @default(uuid())
-  tenantId            String               @map("tenant_id") // Keep tenantId for potential scoping/filtering
+  tenantId            String               @map("tenant_id")
   returnId            String               @map("return_id")
-  originalOrderItemId String?              @map("original_order_item_id")
+  originalOrderItemId String?              @map("original_order_item_id") // Link back to original line item if possible
   productId           String               @map("product_id")
-  quantity            Decimal              @db.Decimal(19, 4)
-  unitRefundAmount    Decimal?             @map("unit_refund_amount") @db.Decimal(19, 4)
-  restockLocationId   String?              @map("restock_location_id") // Where item was restocked (if applicable)
-  condition           ReturnItemCondition? // 'sellable', 'damaged', 'defective'
-  lotNumber           String?              @map("lot_number") // Lot being returned
-  serialNumber        String?              @map("serial_number") // Serial being returned
-  lineRefundAmount    Decimal?             @map("line_refund_amount") @db.Decimal(19, 4)
-  restock             Boolean  // Add this field
+  quantity            Decimal              @db.Decimal(19, 4) // Quantity being returned
+  unitRefundAmount    Decimal?             @map("unit_refund_amount") @db.Decimal(19, 4) // Actual price refunded per unit
+  lineRefundAmount    Decimal?             @map("line_refund_amount") @db.Decimal(19, 4) // Optional: Calculated total refund for line
+  condition           ReturnItemCondition? // Condition upon return
+  restock             Boolean              @default(false) // Flag indicating if item was decided to be restocked
+  restockLocationId   String?              @map("restock_location_id") // Where it was restocked (if restock=true and condition=SELLABLE)
+  lotNumber           String?              @map("lot_number")
+  serialNumber        String?              @map("serial_number")
 
-  // tenant                Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
-  returnRequest         Return                 @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  originalOrderItem     OrderItem?             @relation(fields: [originalOrderItemId], references: [id], onDelete: SetNull)
-  product               Product                @relation(fields: [productId], references: [id], onDelete: Restrict)
-  restockLocation       Location?              @relation(fields: [restockLocationId], references: [id], onDelete: SetNull)
-  inventoryTransactions InventoryTransaction[] // Link restock/disposal inventory transactions
+  returnRequest         Return                 @relation(fields: [returnId], references: [id], onDelete: Cascade) // Delete item if Return header deleted
+  originalOrderItem     OrderItem?             @relation(fields: [originalOrderItemId], references: [id], onDelete: SetNull) // Keep return item even if original OrderItem deleted
+  product               Product                @relation(fields: [productId], references: [id], onDelete: Restrict) // Prevent product delete if in returns
+  restockLocation       Location?              @relation(fields: [restockLocationId], references: [id], onDelete: Restrict) // Don't delete location if used for restock here
+  inventoryTransactions InventoryTransaction[] // Link restock/dispose inventory transactions
 
   @@index([returnId])
   @@index([originalOrderItemId])
   @@index([productId])
-  @@index([tenantId]) // Index tenantId if you query these directly by tenant
+  @@index([tenantId])
   @@map("return_items")
 }
 
-// For cash drawer management
+
+// --- POS Session Models ---
 model PosSession {
   id             String           @id @default(uuid())
   tenantId       String           @map("tenant_id")
   locationId     String           @map("location_id")
   posTerminalId  String           @map("pos_terminal_id")
-  userId         String           @map("user_id") // User who opened/closed the session
+  userId         String           @map("user_id")
   startTime      DateTime         @default(now()) @map("start_time")
   endTime        DateTime?        @map("end_time")
   startingCash   Decimal          @map("starting_cash") @db.Decimal(19, 4)
-  endingCash     Decimal?         @map("ending_cash") @db.Decimal(19, 4) // Actual counted cash
-  calculatedCash Decimal?         @map("calculated_cash") @db.Decimal(19, 4) // Expected cash based on transactions
-  difference     Decimal?         @db.Decimal(19, 4) // ending_cash - calculated_cash
+  endingCash     Decimal?         @map("ending_cash") @db.Decimal(19, 4)
+  calculatedCash Decimal?         @map("calculated_cash") @db.Decimal(19, 4)
+  difference     Decimal?         @db.Decimal(19, 4)
   status         PosSessionStatus
   notes          String?
 
   tenant       Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   location     Location                @relation(fields: [locationId], references: [id], onDelete: Restrict)
   user         User                    @relation("ManagedByUser", fields: [userId], references: [id], onDelete: Restrict)
-  transactions PosSessionTransaction[] // Log cash movements within this session
+  transactions PosSessionTransaction[]
 
   @@index([tenantId])
   @@index([locationId])
   @@index([userId])
   @@index([status])
   @@index([startTime])
+  @@index([posTerminalId]) // Index for finding sessions by terminal
   @@map("pos_sessions")
 }
 
-// Log cash movements within a POS session
 model PosSessionTransaction {
   id              String             @id @default(uuid())
-  tenantId        String             @map("tenant_id") // Keep tenantId for potential scoping/filtering
+  tenantId        String             @map("tenant_id")
   posSessionId    String             @map("pos_session_id")
   timestamp       DateTime           @default(now())
   transactionType PosTransactionType @map("transaction_type")
-  amount          Decimal            @db.Decimal(19, 4) // Positive for in, negative for out
-  relatedOrderId  String?            @map("related_order_id") // Link cash sale/refund to order
+  amount          Decimal            @db.Decimal(19, 4) // Always positive; type determines direction (+/-)
+  relatedOrderId  String?            @map("related_order_id")
   notes           String?
 
-  // tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade) // <<< Removed this potentially redundant relation
-  posSession PosSession @relation(fields: [posSessionId], references: [id], onDelete: Cascade)
-  order      Order?     @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull) // Link to order if relevant
+  posSession PosSession @relation(fields: [posSessionId], references: [id], onDelete: Cascade) // Delete tx if session deleted
+  order      Order?     @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull) // Keep tx even if order deleted
 
   @@index([posSessionId])
   @@index([timestamp])
-  @@index([tenantId]) // Index tenantId if you query these directly by tenant
+  @@index([tenantId])
+  @@index([relatedOrderId])
   @@map("pos_session_transactions")
 }
 
-// Configuration & Customization
-// General system/tenant configuration store
+
+// --- Config & Audit Models ---
 model Configuration {
   id          String   @id @default(uuid())
-  tenantId    String?  @map("tenant_id") // Null for system-wide config
+  tenantId    String?  @map("tenant_id")
   configKey   String   @map("config_key")
   configValue Json     @map("config_value")
   description String?
@@ -1024,8 +1031,8 @@ model Configuration {
 
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, configKey]) // Config key unique per tenant (or globally if tenantId is NULL)
-  @@index([tenantId]) // Index allows filtering by tenant or global (NULL)
+  @@unique([tenantId, configKey])
+  @@index([tenantId])
   @@index([configKey])
   @@map("configurations")
 }
@@ -1034,10 +1041,10 @@ model NotificationTemplate {
   id           String           @id @default(uuid())
   tenantId     String           @map("tenant_id")
   templateName String           @map("template_name")
-  templateType NotificationType @map("template_type") // 'email', 'sms', 'system'
-  eventTrigger String           @map("event_trigger") // e.g., 'order_confirmed', 'low_stock_alert'
-  subject      String? // For email
-  body         String // Supports template variables (e.g., Handlebars)
+  templateType NotificationType @map("template_type")
+  eventTrigger String           @map("event_trigger")
+  subject      String?
+  body         String
   isActive     Boolean          @default(true) @map("is_active")
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
@@ -1050,24 +1057,24 @@ model NotificationTemplate {
   @@map("notification_templates")
 }
 
-// Audit Logging
 model AuditLog {
-  id         BigInt   @id @default(autoincrement()) @map("log_id")
-  tenantId   String?  @map("tenant_id") // Can be NULL for system events
-  timestamp  DateTime @default(now())
-  userId     String?  @map("user_id") // Can be NULL for system actions
-  action     String // e.g., 'create_product', 'update_order_status', 'login'
-  entityType String?  @map("entity_type") // e.g., 'product', 'order'
-  entityId   String?  @map("entity_id") // Can be UUID or other identifiers
-  details    Json? // Store old/new values or specific event details
-  ipAddress  String?  @map("ip_address")
-  userAgent  String?  @map("user_agent")
+  id         BigInt    @id @default(autoincrement()) @map("log_id")
+  tenantId   String?   @map("tenant_id")
+  timestamp  DateTime  @default(now()) @db.Timestamp(6) // Increased precision for logs
+  userId     String?   @map("user_id")
+  action     String
+  entityType String?   @map("entity_type")
+  entityId   String?   @map("entity_id")
+  details    Json?
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user   User?   @relation("ActionByUser", fields: [userId], references: [id], onDelete: SetNull)
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull) // Keep log if tenant deleted
+  user   User?   @relation("ActionByUser", fields: [userId], references: [id], onDelete: SetNull) // Keep log if user deleted
 
-  @@index([tenantId, timestamp]) // For filtering and partitioning
+  @@index([tenantId, timestamp]) // Partition key candidate
   @@index([userId])
   @@index([entityType, entityId])
+  @@index([action]) // Index action for filtering specific event types
   @@map("audit_logs")
 }

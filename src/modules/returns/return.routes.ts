@@ -2,64 +2,87 @@
 import express from 'express';
 import { returnController } from './return.controller'; // Import the return controller
 import validateRequest from '@/middleware/validate.middleware';
-import { CreateReturnDto } from './dto'; // Import the DTO for validation
-import { authMiddleware } from '@/middleware/auth.middleware'; // Standard authentication
-import { ensureTenantContext } from '@/middleware/tenant.middleware'; // Standard tenant scoping
-import { checkPermissions } from '@/middleware/rbac.middleware'; // For permission checking
+// Import necessary DTOs for validation
+import { CreateReturnDto, UpdateReturnDto } from './dto';
+import { authMiddleware } from '@/middleware/auth.middleware'; // Verifies JWT, attaches req.user, req.tenantId
+import { ensureTenantContext } from '@/middleware/tenant.middleware'; // Ensures req.tenantId is set after auth
+import { checkPermissions } from '@/middleware/rbac.middleware'; // Permission checking middleware
 
 const router = express.Router();
 
-// --- Apply Middleware ---
-// All return-related actions require authentication and tenant context
+// Apply authentication and tenant context check to all Return routes
 router.use(authMiddleware);
 router.use(ensureTenantContext);
 
-// --- Define Return Routes ---
-
+// Define Return Routes with Permissions
 router.route('/')
     /**
      * POST /api/v1/returns
-     * Processes a new customer return (linked or blind). Creates Return, ReturnItem,
-     * Payment (refund), PosSessionTransaction (if cash refund in session), and updates Inventory.
-     * Requires 'order:manage:returns' OR 'pos:return' permission.
+     * Creates a new return request/record.
+     * Requires 'order:manage:returns' or a specific 'return:create' permission.
+     * Permissions may also implicitly include POS-related permissions if created via POS.
      */
     .post(
-        // Use checkPermissions that allows EITHER permission for flexibility
-        // This requires checkPermissions or your RBAC logic to handle OR conditions if built that way.
-        // If not, you might need separate endpoints or a more complex check.
-        // Assuming checkPermissions can handle an array as OR:
-        checkPermissions(['order:manage:returns', 'pos:return']),
-        validateRequest(CreateReturnDto), // Validate the request body
-        returnController.processReturn    // Handle the return processing
+        // Example using general order management permission, adjust as needed
+        checkPermissions(['order:manage:returns', 'pos:return']), // Allow if user has either permission
+        validateRequest(CreateReturnDto),      // Validate the return creation payload
+        returnController.createReturn          // Handle request
     )
     /**
      * GET /api/v1/returns
      * Retrieves a paginated list of returns within the authenticated user's tenant.
      * Supports filtering and sorting via query parameters.
-     * Requires 'order:read:any' or a specific 'return:read' permission.
+     * Requires 'order:manage:returns' or 'return:read' permission.
      */
     .get(
-        // Allow users who can read any order OR have specific return read permission
-        checkPermissions(['order:read:any', 'return:read']), // Assuming 'return:read' permission exists
-        returnController.getReturns // Handle fetching the list
+        checkPermissions(['order:manage:returns', 'return:read']), // Permission check
+        returnController.getReturns               // Handler (query param validation inside)
     );
 
 router.route('/:returnId')
     /**
      * GET /api/v1/returns/:returnId
-     * Retrieves details for a specific return record by its ID.
-     * Requires 'order:read:any' or a specific 'return:read' permission.
+     * Retrieves details for a specific return.
+     * Requires 'order:manage:returns' or 'return:read' permission.
      */
     .get(
-        checkPermissions(['order:read:any', 'return:read']), // Allow either permission
-        returnController.getReturn // Handle fetching single record
+        checkPermissions(['order:manage:returns', 'return:read']), // Permission check
+        returnController.getReturn                 // Handler
+    )
+    /**
+     * PATCH /api/v1/returns/:returnId
+     * Updates details (primarily status or notes) for a specific return.
+     * Requires 'order:manage:returns' or 'return:update' permission.
+     */
+    .patch(
+        checkPermissions(['order:manage:returns', 'return:update']), // Permission check
+        validateRequest(UpdateReturnDto),         // Validate update payload
+        returnController.updateReturn             // Handler
     );
 
-// Note: Updating or Deleting returns is generally discouraged in accounting workflows.
-// Corrections are usually handled by creating new reversing/adjusting transactions.
-// If needed, specific endpoints for specific, allowed updates could be added here.
-// Example:
-// router.patch('/:returnId/notes', checkPermissions(['order:manage:returns']), validateRequest(UpdateReturnNotesDto), returnController.updateNotes);
+// Optional: Dedicated Action Endpoints (Alternative to PATCH for status changes)
+/*
+router.post(
+    '/:returnId/approve',
+    checkPermissions(['order:manage:returns', 'return:approve']),
+    // Optional: validateRequest(ActionDto) for notes
+    returnController.approveReturn // Needs corresponding controller method
+);
 
-// Export the configured router for the returns module
+router.post(
+    '/:returnId/reject',
+    checkPermissions(['order:manage:returns', 'return:reject']),
+     // Optional: validateRequest(ActionDto) for notes
+    returnController.rejectReturn // Needs corresponding controller method
+);
+
+router.post(
+    '/:returnId/complete',
+    checkPermissions(['order:manage:returns', 'return:complete']),
+     // Optional: validateRequest(ActionDto) for notes
+    returnController.completeReturn // Needs corresponding controller method
+);
+*/
+
+// Export the configured router for returns
 export default router;
