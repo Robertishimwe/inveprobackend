@@ -143,6 +143,28 @@ enum NotificationType {
   SYSTEM // In-app notification/feed
 }
 
+// --- NEW Enums for Stock Count ---
+enum StockCountStatus {
+  PENDING     // Count initiated, items snapshotted, ready for counting
+  COUNTING    // Physical counting in progress (items being entered)
+  REVIEW      // All items entered, awaiting manager review/approval
+  COMPLETED   // Count reviewed, adjustments posted, process finished
+  CANCELLED   // Count process cancelled before completion
+}
+
+enum StockCountType {
+  FULL        // Full physical inventory for the location
+  CYCLE       // Partial count based on specific criteria
+}
+
+enum StockCountItemStatus {
+  PENDING            // Not yet counted
+  COUNTED            // Physical count entered
+  RECOUNT_REQUESTED  // Manager requested a recount for this item
+  APPROVED           // Variance (if any) approved for adjustment posting
+  SKIPPED            // Reviewer decided to skip adjusting this item's variance
+}
+
 // ======================================================================
 // == Models ==
 // ======================================================================
@@ -178,6 +200,7 @@ model Tenant {
   notificationTemplates NotificationTemplate[]
   auditLogs             AuditLog[]
   returns               Return[]
+  stockCounts           StockCount[] 
 
   @@index([status])
   @@map("tenants")
@@ -260,6 +283,10 @@ model User {
   inventoryTransfers    InventoryTransfer[]    @relation("CreatedByUser")
   refreshTokens         RefreshToken[]         // User's refresh tokens
   passwordResetTokens   PasswordResetToken[]   // User's password reset tokens
+  initiatedStockCounts   StockCount[]          @relation("InitiatedStockCounts")
+  reviewedStockCounts    StockCount[]          @relation("ReviewedStockCounts")
+  completedStockCounts   StockCount[]          @relation("CompletedStockCounts")
+  countedStockCountItems StockCountItem[]      @relation("CountedStockCountItems")
 
   @@index([tenantId]) // Index nullable FK
   @@index([email])
@@ -379,6 +406,7 @@ model Product {
   returnItems     ReturnItem[]
   adjustmentItems InventoryAdjustmentItem[]
   transferItems   InventoryTransferItem[]
+  stockCountItems StockCountItem[]
 
   @@unique([tenantId, sku]) // SKU unique per tenant
   @@index([tenantId])
@@ -465,6 +493,7 @@ model Location {
   posSessions          PosSession[]
   returnRestockItems   ReturnItem[]           // Restock location
   returns              Return[]               // Location where return was processed
+  stockCounts          StockCount[]
 
   @@unique([tenantId, name]) // Location name unique per tenant
   @@index([tenantId])
@@ -1077,4 +1106,71 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([action]) // Index action for filtering specific event types
   @@map("audit_logs")
+}
+
+// --- NEW Models for Stock Count ---
+
+model StockCount {
+  id                String           @id @default(uuid())
+  tenantId          String           @map("tenant_id")
+  locationId        String           @map("location_id")
+  countNumber       String?          @unique @map("count_number") // Optional: Auto-generated count identifier
+  status            StockCountStatus @default(PENDING)
+  type              StockCountType   // FULL or CYCLE
+  initiatedByUserId String           @map("initiated_by_user_id")
+  initiatedAt       DateTime         @default(now()) @map("initiated_at")
+  reviewedByUserId  String?          @map("reviewed_by_user_id")
+  reviewedAt        DateTime?        @map("reviewed_at")
+  completedByUserId String?          @map("completed_by_user_id") // User who posted adjustments
+  completedAt       DateTime?        @map("completed_at")
+  notes             String?
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location        Location           @relation(fields: [locationId], references: [id], onDelete: Restrict) // Don't delete location if counts exist
+  initiatedByUser User               @relation("InitiatedStockCounts", fields: [initiatedByUserId], references: [id], onDelete: Restrict)
+  reviewedByUser  User?              @relation("ReviewedStockCounts", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  completedByUser User?              @relation("CompletedStockCounts", fields: [completedByUserId], references: [id], onDelete: SetNull)
+  items           StockCountItem[]
+
+  @@index([tenantId])
+  @@index([locationId])
+  @@index([status])
+  @@index([type])
+  @@index([initiatedAt])
+  @@map("stock_counts")
+}
+
+model StockCountItem {
+  id                  String                @id @default(uuid())
+  tenantId            String                @map("tenant_id")
+  stockCountId        String                @map("stock_count_id")
+  productId           String                @map("product_id")
+  snapshotQuantity    Decimal               @map("snapshot_quantity") @db.Decimal(19, 4) // QOH at initiation
+  countedQuantity     Decimal?              @map("counted_quantity") @db.Decimal(19, 4) // Entered by user
+  varianceQuantity    Decimal?              @map("variance_quantity") @db.Decimal(19, 4) // Calculated: counted - snapshot
+  unitCostAtSnapshot  Decimal?              @map("unit_cost_at_snapshot") @db.Decimal(19, 4) // For variance valuation
+  status              StockCountItemStatus  @default(PENDING)
+  countedByUserId     String?               @map("counted_by_user_id")
+  countedAt           DateTime?             @map("counted_at")
+  reviewNotes         String?               @map("review_notes") // Notes from the reviewer
+  // Optional: Add fields for lot/serial if counting specific instances
+  lotNumber           String?
+  notes               String?
+  serialNumber        String?
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+
+  stockCount      StockCount         @relation(fields: [stockCountId], references: [id], onDelete: Cascade) // Delete items if count deleted
+  product         Product            @relation(fields: [productId], references: [id], onDelete: Restrict) // Don't delete product if on count sheet
+  countedByUser   User?              @relation("CountedStockCountItems", fields: [countedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([stockCountId, productId , lotNumber, serialNumber]) // Ensure only one line per product (or product/lot/serial) per count
+  @@index([tenantId]) // Index tenantId for direct queries if needed
+  @@index([stockCountId])
+  @@index([productId])
+  @@index([status])
+  @@map("stock_count_items")
 }

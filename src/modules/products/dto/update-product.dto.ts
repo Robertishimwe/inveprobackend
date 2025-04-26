@@ -1,6 +1,6 @@
 // src/modules/products/dto/update-product.dto.ts
 import {
-    IsString, IsOptional, IsBoolean, IsNumber, Min, IsObject,
+    IsString, IsOptional, IsBoolean, IsNumber, Min, IsObject, IsArray, IsUUID,
     ValidateNested, IsEnum, MaxLength, IsJSON, Matches, IsLowercase, IsNotEmpty
   } from 'class-validator';
   import { Type } from 'class-transformer';
@@ -32,6 +32,11 @@ import {
     @MaxLength(100)
     @IsOptional()
     brand?: string;
+
+    @IsArray()
+    @IsUUID('4', { each: true, message: 'Each category ID must be a valid UUID.' })
+    @IsOptional() // Categories might be assigned later
+    categoryIds?: string[];
   
     @IsBoolean()
     @IsOptional()
