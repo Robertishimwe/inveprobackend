@@ -914,6 +914,7 @@ model Payment {
   processedByUserId    String?       @map("processed_by_user_id")
   notes                String?
   returnId             String?       // Link to Return if this is a Refund payment
+  createdAt            DateTime    @default(now()) @map("created_at")
 
   order           Order? @relation(fields: [orderId], references: [id], onDelete: Cascade) // Make order required via FK, but field optional? No, needs orderId.
   // Let's assume Payment always links to an Order or a Return, not both. If linked to Return, orderId might be null.
