@@ -7,7 +7,7 @@ import catchAsync from '@/utils/catchAsync';
 /** Controller to get all available permissions */
 const getPermissions = catchAsync(async (req: Request, res: Response) => {
     const permissions = await permissionService.getAllPermissions();
-    res.status(httpStatus.OK).send(permissions);
+    res.status(httpStatus.OK).send({results: permissions});
 });
 
 export const permissionController = {

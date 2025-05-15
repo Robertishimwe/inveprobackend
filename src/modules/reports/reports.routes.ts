@@ -5,8 +5,8 @@ import { authMiddleware } from '@/middleware/auth.middleware'; // Standard auth 
 import { ensureTenantContext } from '@/middleware/tenant.middleware'; // Standard tenant check
 import { checkPermissions } from '@/middleware/rbac.middleware'; // RBAC middleware
 // Optional: Import DTO and validation middleware for query params
-// import validateRequest from '@/middleware/validate.middleware';
-// import { ReportQueryDto } from './dto';
+import validateRequest from '@/middleware/validate.middleware';
+import { ReportQueryDto } from './dto/report-query.dto';
 
 const router = express.Router();
 
@@ -26,7 +26,7 @@ router.get(
     '/dashboard-kpi',
     // Example: Requires view permission for key areas shown on dashboard
     checkPermissions(['dashboard:view', 'report:view:sales', 'report:view:inventory']),
-    // validateRequest(ReportQueryDto, 'query'), // Optional: Validate query params like 'period', 'locationId'
+    validateRequest(ReportQueryDto, 'query'), // Optional: Validate query params like 'period', 'locationId'
     reportingController.getDashboardKpis
 );
 
@@ -35,7 +35,7 @@ router.get(
 router.get(
     '/sales-summary',
     checkPermissions(['report:view:sales']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getSalesSummary
 );
 
@@ -43,7 +43,7 @@ router.get(
 router.get(
     '/sales-by-product',
     checkPermissions(['report:view:sales']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getSalesByProduct
 );
 
@@ -51,7 +51,7 @@ router.get(
 router.get(
     '/sales-by-category',
     checkPermissions(['report:view:sales']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getSalesByCategory
 );
 
@@ -59,7 +59,7 @@ router.get(
 router.get(
     '/sales-by-location',
     checkPermissions(['report:view:sales']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getSalesByLocation
 );
 
@@ -67,7 +67,7 @@ router.get(
 router.get(
     '/sales-by-staff',
     checkPermissions(['report:view:sales']), // Might need finer control if staff can only see own sales
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getSalesByStaff
 );
 
@@ -75,7 +75,7 @@ router.get(
 router.get(
     '/payment-methods-summary',
     checkPermissions(['report:view:sales']), // Often grouped with sales
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getPaymentMethodsSummary
 );
 
@@ -83,7 +83,7 @@ router.get(
 router.get(
     '/tax-summary',
     checkPermissions(['report:view:sales']), // Often grouped with sales/finance
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getTaxSummary
 );
 
@@ -93,7 +93,7 @@ router.get(
 router.get(
     '/inventory-on-hand',
     checkPermissions(['report:view:inventory']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getInventoryOnHand
 );
 
@@ -101,7 +101,7 @@ router.get(
 router.get(
     '/inventory-valuation',
     checkPermissions(['report:view:inventory', 'inventory:valuation:read']), // Specific permission potentially
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getInventoryValuation
 );
 
@@ -109,7 +109,7 @@ router.get(
 router.get(
     '/low-stock',
     checkPermissions(['report:view:inventory']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getLowStock
 );
 
@@ -117,7 +117,7 @@ router.get(
 router.get(
     '/inventory-movement-ledger',
     checkPermissions(['inventory:read:transactions']), // Use specific transaction read permission
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getInventoryMovementLedger
 );
 
@@ -125,7 +125,7 @@ router.get(
 router.get(
     '/inventory-adjustment-report',
     checkPermissions(['inventory:adjust:read']), // Use specific adjustment read permission
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getInventoryAdjustmentReport
 );
 
@@ -133,7 +133,7 @@ router.get(
 router.get(
     '/inventory-transfer-report',
     checkPermissions(['inventory:transfer:read']), // Use specific transfer read permission
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getInventoryTransferReport
 );
 
@@ -143,7 +143,7 @@ router.get(
 router.get(
     '/purchase-order-summary',
     checkPermissions(['report:view:purchasing', 'po:read']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getPurchaseOrderSummary
 );
 
@@ -151,7 +151,7 @@ router.get(
 router.get(
     '/purchase-order-detail-report',
     checkPermissions(['report:view:purchasing', 'po:read']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getPurchaseOrderDetailReport
 );
 
@@ -161,7 +161,7 @@ router.get(
 router.get(
     '/customer-purchase-history', // Consider nesting under /customers/:id/purchase-history ?
     checkPermissions(['report:view:customer', 'customer:read']),
-    // validateRequest(ReportQueryDto, 'query'), // Requires customerId query param
+    validateRequest(ReportQueryDto, 'query'), // Requires customerId query param
     reportingController.getCustomerPurchaseHistory
 );
 
@@ -169,7 +169,7 @@ router.get(
 router.get(
     '/top-customers',
     checkPermissions(['report:view:customer']),
-    // validateRequest(ReportQueryDto, 'query'),
+    validateRequest(ReportQueryDto, 'query'),
     reportingController.getTopCustomers
 );
 
@@ -179,7 +179,7 @@ router.get(
 router.get(
     '/pos-session-report',
     checkPermissions(['report:view:pos', 'pos:session:read:any']),
-    // validateRequest(ReportQueryDto, 'query'), // Needs filters like sessionId, date range etc.
+    validateRequest(ReportQueryDto, 'query'), // Needs filters like sessionId, date range etc.
     reportingController.getPosSessionReport
 );
 

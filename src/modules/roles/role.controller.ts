@@ -50,6 +50,43 @@ const getRoles = catchAsync(async (req: Request, res: Response) => {
     });
 });
 
+
+/** Controller to get roles without linked data(without permissions) */
+
+
+
+const getRolesWithOutPermissions = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req);
+    const filterParams = pick(req.query, ['name', 'isSystemRole']);
+    const options = pick(req.query, ['sortBy', 'limit', 'page']);
+
+    const filter: Prisma.RoleWhereInput = { tenantId };
+    if (filterParams.name) filter.name = { contains: filterParams.name as string, mode: 'insensitive' };
+    if (filterParams.isSystemRole !== undefined) filter.isSystemRole = filterParams.isSystemRole === 'true';
+
+    const orderBy: Prisma.RoleOrderByWithRelationInput[] = [];
+     if (options.sortBy) {
+        (options.sortBy as string).split(',').forEach(sortOption => {
+            const [key, order] = sortOption.split(':');
+            if (key && (order === 'asc' || order === 'desc')) {
+                if (['name', 'createdAt', 'isSystemRole'].includes(key)) { orderBy.push({ [key]: order }); }
+            }
+        });
+    }
+    if (orderBy.length === 0) { orderBy.push({ isSystemRole: 'desc' }, { name: 'asc' }); } // Show system roles first
+
+    const limit = parseInt(options.limit as string) || 10;
+    const page = parseInt(options.page as string) || 1;
+
+    const result = await roleService.queryRolesWithOutLinkedData(filter, orderBy, limit, page);
+    res.status(httpStatus.OK).send({
+        results: result.roles,
+        page: page, limit: limit, totalPages: Math.ceil(result.totalResults / limit), totalResults: result.totalResults,
+    });
+});
+
+
+
 /** Controller to get a single role */
 const getRole = catchAsync(async (req: Request, res: Response) => {
     const tenantId = getTenantIdFromRequest(req);
@@ -134,6 +171,7 @@ export const roleController = {
     removePermission, // Keep single remove
     addPermissions,   // New batch add
     removePermissions,// New batch remove
+    getRolesWithOutPermissions,
 };
 
 // // Export all controller methods including the new ones

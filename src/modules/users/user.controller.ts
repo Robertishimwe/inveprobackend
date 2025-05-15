@@ -27,6 +27,162 @@ const createUnassignedUser = catchAsync(async (req: Request, res: Response) => {
     res.status(httpStatus.CREATED).send(user);
 });
 
+
+/**
+ * Controller to get tenantless users
+ */
+
+
+const getTenantLessUsers = catchAsync(async (req: Request, res: Response) => {
+    // const tenantId = getTenantIdFromRequest(req);
+
+    // Define allowed filters from query parameters
+    const filterParams = pick(req.query, [
+        'firstName', 'lastName', 'name', 'email', 'phoneNumber', 'isActive', 'roleId'
+    ]);
+    // Define allowed options for sorting and pagination
+    const options = pick(req.query, ['sortBy', 'limit', 'page']);
+
+    // Build Prisma WhereInput object, always including the tenantId
+    // const filter: Prisma.UserWhereInput = { tenantId }; // Automatically scope by tenant
+    // const filter: Omit<Prisma.UserWhereInput, 'tenantId'> = {};
+    const filter: Prisma.UserWhereInput = {
+        tenantId: null, // <-- Ensure you're only getting tenant-less users
+      };
+
+    if (filterParams.firstName) filter.firstName = { contains: filterParams.firstName as string, mode: 'insensitive' };
+    if (filterParams.lastName) filter.lastName = { contains: filterParams.lastName as string, mode: 'insensitive' };
+    if (filterParams.email) filter.email = { contains: filterParams.email as string, mode: 'insensitive' };
+    if (filterParams.phoneNumber) filter.phoneNumber = { contains: filterParams.phoneNumber as string }; // Adjust mode if needed
+    if (filterParams.isActive !== undefined) filter.isActive = filterParams.isActive === 'true';
+
+    // Combined name search
+    if (filterParams.name) {
+        const name = filterParams.name as string;
+        filter.OR = [ // Search in either first OR last name
+            { firstName: { contains: name, mode: 'insensitive' } },
+            { lastName: { contains: name, mode: 'insensitive' } },
+        ];
+    }
+
+    // Filter by Role ID (users having this role)
+    if (filterParams.roleId) {
+        filter.roles = {
+            some: { roleId: filterParams.roleId as string },
+        };
+    }
+
+    // Build Prisma OrderBy array
+    const orderBy: Prisma.UserOrderByWithRelationInput[] = [];
+    if (options.sortBy) {
+        (options.sortBy as string).split(',').forEach(sortOption => {
+            const [key, order] = sortOption.split(':');
+            if (key && (order === 'asc' || order === 'desc')) {
+                if (['email', 'firstName', 'lastName', 'createdAt', 'updatedAt', 'isActive'].includes(key)) {
+                    orderBy.push({ [key]: order });
+                }
+            }
+        });
+    }
+    if (orderBy.length === 0) {
+        orderBy.push({ firstName: 'asc' }, { lastName: 'asc' }); // Default sort
+    }
+
+    // Parse pagination options
+    const limit = parseInt(options.limit as string) || 10;
+    const page = parseInt(options.page as string) || 1;
+
+    // Call the service with constructed filters and options
+    const result = await userService.queryTenantLessUsers(filter, orderBy, limit, page);
+
+    // Format and send the paginated response
+    res.status(httpStatus.OK).send({
+        results: result.users,
+        page: page,
+        limit: limit,
+        totalPages: Math.ceil(result.totalResults / limit),
+        totalResults: result.totalResults,
+    });
+});
+
+
+/**
+ * Get all user
+ */
+
+
+const getAllUsersFromAllTenants = catchAsync(async (req: Request, res: Response) => {
+    // const tenantId = getTenantIdFromRequest(req);
+
+    // Define allowed filters from query parameters
+    const filterParams = pick(req.query, [
+        'firstName', 'lastName', 'name', 'email', 'phoneNumber', 'isActive', 'roleId'
+    ]);
+    // Define allowed options for sorting and pagination
+    const options = pick(req.query, ['sortBy', 'limit', 'page']);
+
+    // Build Prisma WhereInput object, always including the tenantId
+    // const filter: Prisma.UserWhereInput = { tenantId }; // Automatically scope by tenant
+    const filter: Omit<Prisma.UserWhereInput, 'tenantId'> = {};
+    // const filter: Prisma.UserWhereInput = {
+    //     tenantId: null, // <-- Ensure you're only getting tenant-less users
+    //   };
+
+    if (filterParams.firstName) filter.firstName = { contains: filterParams.firstName as string, mode: 'insensitive' };
+    if (filterParams.lastName) filter.lastName = { contains: filterParams.lastName as string, mode: 'insensitive' };
+    if (filterParams.email) filter.email = { contains: filterParams.email as string, mode: 'insensitive' };
+    if (filterParams.phoneNumber) filter.phoneNumber = { contains: filterParams.phoneNumber as string }; // Adjust mode if needed
+    if (filterParams.isActive !== undefined) filter.isActive = filterParams.isActive === 'true';
+
+    // Combined name search
+    if (filterParams.name) {
+        const name = filterParams.name as string;
+        filter.OR = [ // Search in either first OR last name
+            { firstName: { contains: name, mode: 'insensitive' } },
+            { lastName: { contains: name, mode: 'insensitive' } },
+        ];
+    }
+
+    // Filter by Role ID (users having this role)
+    if (filterParams.roleId) {
+        filter.roles = {
+            some: { roleId: filterParams.roleId as string },
+        };
+    }
+
+    // Build Prisma OrderBy array
+    const orderBy: Prisma.UserOrderByWithRelationInput[] = [];
+    if (options.sortBy) {
+        (options.sortBy as string).split(',').forEach(sortOption => {
+            const [key, order] = sortOption.split(':');
+            if (key && (order === 'asc' || order === 'desc')) {
+                if (['email', 'firstName', 'lastName', 'createdAt', 'updatedAt', 'isActive'].includes(key)) {
+                    orderBy.push({ [key]: order });
+                }
+            }
+        });
+    }
+    if (orderBy.length === 0) {
+        orderBy.push({ firstName: 'asc' }, { lastName: 'asc' }); // Default sort
+    }
+
+    // Parse pagination options
+    const limit = parseInt(options.limit as string) || 10;
+    const page = parseInt(options.page as string) || 1;
+
+    // Call the service with constructed filters and options
+    const result = await userService.queryTenantLessUsers(filter, orderBy, limit, page);
+
+    // Format and send the paginated response
+    res.status(httpStatus.OK).send({
+        results: result.users,
+        page: page,
+        limit: limit,
+        totalPages: Math.ceil(result.totalResults / limit),
+        totalResults: result.totalResults,
+    });
+});
+
 /**
  * Controller to handle querying multiple users with filters and pagination.
  */
@@ -222,7 +378,9 @@ export const userController = {
     deleteUser, 
     assignRole, 
     removeRole,
-    createUnassignedUser
+    getTenantLessUsers,
+    createUnassignedUser,
+    getAllUsersFromAllTenants
 };
 
 

@@ -32,6 +32,18 @@ router.route('/')
         roleController.getRoles
     );
 
+/////////////////////
+router.route('/withOutPermissions')
+    /** GET /api/v1/roles */
+    .get(
+        checkPermissions(['role:read']),   // Permission to read roles
+        roleController.getRolesWithOutPermissions
+    );
+
+
+
+//////////
+    
 router.route('/:roleId')
     /** GET /api/v1/roles/:roleId */
     .get(

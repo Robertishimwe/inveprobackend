@@ -13,7 +13,6 @@ const router = express.Router();
 // Apply auth and tenant context middleware to all product routes
 router.use(authMiddleware);
 router.use(ensureTenantContext);
-
 // Define Product Routes with specific permissions
 router.route('/')
     /**
