@@ -62,7 +62,7 @@ const invalidateProductCache = async (tenantId: string, productId: string, sku?:
         const results = await pipeline.exec();
         // Optional: Check results for errors
         results?.forEach(([err, _], index) => {
-             if (err) logger.error(`Error during pipelined cache invalidation (Command ${index})`, { error: err });
+            if (err) logger.error(`Error during pipelined cache invalidation (Command ${index})`, { error: err });
         });
 
     } catch (cacheError) {
@@ -89,6 +89,108 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
         throw new ApiError(httpStatus.CONFLICT, `Product with SKU '${productData.sku}' already exists.`);
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // 2. Validate Category IDs if provided
+    let categoryConnectOrCreate: Prisma.ProductCategoryCreateNestedManyWithoutProductInput | undefined = undefined;
+    if (productData.categoryIds && productData.categoryIds.length > 0) {
+        const validCategories = await prisma.category.findMany({
+            where: { id: { in: productData.categoryIds }, tenantId: tenantId }, // Ensure categories belong to tenant
+            select: { id: true }
+        });
+        if (validCategories.length !== productData.categoryIds.length) {
+            const invalidIds = productData.categoryIds.filter(id => !validCategories.some(vc => vc.id === id));
+            throw new ApiError(httpStatus.BAD_REQUEST, `Invalid or non-existent category IDs provided: ${invalidIds.join(', ')}`);
+        }
+        // Prepare connect operation for valid categories
+        categoryConnectOrCreate = {
+            create: productData.categoryIds.map(catId => ({
+                // tenantId? // Not needed on join table itself usually
+                category: { connect: { id: catId } }
+            }))
+        };
+        logContext.categoriesAssigned = productData.categoryIds;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     // 2. Prepare data, parse JSON, handle dimensions
     let parsedCustomAttributes: Prisma.InputJsonValue | undefined = undefined;
     if (productData.customAttributes) {
@@ -102,8 +204,8 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
     }
 
     if (productData.dimensions && (productData.dimensions.length || productData.dimensions.width || productData.dimensions.height) && !productData.dimensions.unit) {
-         logger.warn(`Product creation failed: Dimension unit missing`, logContext);
-         throw new ApiError(httpStatus.BAD_REQUEST, 'Dimension unit is required if length, width, or height is provided.');
+        logger.warn(`Product creation failed: Dimension unit missing`, logContext);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Dimension unit is required if length, width, or height is provided.');
     }
     const dimensionsJson: Prisma.JsonObject | undefined = productData.dimensions
         ? productData.dimensions as Prisma.JsonObject // Cast DTO (assuming structure matches)
@@ -129,6 +231,7 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
             weight: productData.weight,
             weightUnit: productData.weightUnit,
             dimensions: dimensionsJson,
+            categories: categoryConnectOrCreate,
             customAttributes: parsedCustomAttributes ?? Prisma.JsonNull, // Use JsonNull if undefined after parsing attempt
             tenant: { connect: { id: tenantId } }
         };
@@ -147,7 +250,7 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
         logContext.error = error;
         logger.error(`Error creating product in database`, logContext);
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             throw new ApiError(httpStatus.CONFLICT, `Product with SKU '${productData.sku}' already exists.`);
+            throw new ApiError(httpStatus.CONFLICT, `Product with SKU '${productData.sku}' already exists.`);
         }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to create product.');
     }
@@ -175,10 +278,10 @@ const queryProducts = async (
         if (cachedData) {
             logger.debug(`Cache HIT for product list`, logContext);
             const parsedData = JSON.parse(cachedData);
-             if (parsedData && typeof parsedData.totalResults === 'number' && Array.isArray(parsedData.products)) {
+            if (parsedData && typeof parsedData.totalResults === 'number' && Array.isArray(parsedData.products)) {
                 return parsedData as { products: SafeProduct[]; totalResults: number };
             } else {
-                 logger.warn(`Invalid data structure found in product list cache key ${cacheKey}`, logContext);
+                logger.warn(`Invalid data structure found in product list cache key ${cacheKey}`, logContext);
             }
         } else {
             logger.debug(`Cache MISS for product list`, logContext);
@@ -202,8 +305,8 @@ const queryProducts = async (
             await redisClient.set(cacheKey, JSON.stringify(result), 'EX', CACHE_LIST_TTL_SECONDS);
             logger.debug(`Stored product list result in cache`, logContext);
         } catch (cacheError) {
-             logContext.error = cacheError;
-             logger.error(`Redis SET error for product list cache`, logContext);
+            logContext.error = cacheError;
+            logger.error(`Redis SET error for product list cache`, logContext);
         }
         logger.debug(`Product query successful from DB`, { ...logContext, count: products.length, total: totalResults });
         return result;
@@ -230,7 +333,7 @@ const getProductById = async (productId: string, tenantId: string): Promise<Safe
             logger.debug(`Cache HIT for product`, logContext);
             return JSON.parse(cachedProduct) as SafeProduct;
         }
-         logger.debug(`Cache MISS for product`, logContext);
+        logger.debug(`Cache MISS for product`, logContext);
     } catch (cacheError) {
         logContext.error = cacheError;
         logger.error(`Redis GET error for product cache`, logContext);
@@ -251,10 +354,10 @@ const getProductById = async (productId: string, tenantId: string): Promise<Safe
         // 4. Store in cache if found and correct tenant
         try {
             await redisClient.set(cacheKey, JSON.stringify(product), 'EX', CACHE_TTL_SECONDS);
-             logger.debug(`Stored product in cache`, logContext);
+            logger.debug(`Stored product in cache`, logContext);
         } catch (cacheError) {
-             logContext.error = cacheError;
-             logger.error(`Redis SET error for product cache`, logContext);
+            logContext.error = cacheError;
+            logger.error(`Redis SET error for product cache`, logContext);
         }
         logger.debug(`Product found successfully in DB`, logContext);
         return product;
@@ -287,20 +390,20 @@ const updateProductById = async (
         throw new ApiError(httpStatus.NOT_FOUND, 'Product not found.');
     }
 
-    // 2. Prepare data for Prisma update
     const dataToUpdate: Prisma.ProductUpdateInput = {};
     Object.keys(updateData).forEach((key) => {
         const typedKey = key as keyof UpdateProductDto;
-        if (typedKey !== 'dimensions' && typedKey !== 'customAttributes' && updateData[typedKey] !== undefined) {
+        // Exclude categoryIds and complex fields handled separately
+        if (typedKey !== 'dimensions' && typedKey !== 'customAttributes' && typedKey !== 'categoryIds' && updateData[typedKey] !== undefined) {
             (dataToUpdate as any)[typedKey] = updateData[typedKey];
         }
     });
 
     if (updateData.dimensions !== undefined) {
-         if ((updateData.dimensions.length || updateData.dimensions.width || updateData.dimensions.height) && !updateData.dimensions.unit) {
-             logger.warn(`Product update failed: Dimension unit missing`, logContext);
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Dimension unit is required if length, width, or height is provided.');
-         }
+        if ((updateData.dimensions.length || updateData.dimensions.width || updateData.dimensions.height) && !updateData.dimensions.unit) {
+            logger.warn(`Product update failed: Dimension unit missing`, logContext);
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Dimension unit is required if length, width, or height is provided.');
+        }
         dataToUpdate.dimensions = updateData.dimensions as Prisma.JsonObject ?? Prisma.JsonNull;
     }
 
@@ -309,52 +412,84 @@ const updateProductById = async (
             dataToUpdate.customAttributes = Prisma.JsonNull;
         } else {
             try {
-                 // Ensure updateData.customAttributes is treated as string before parsing
-                 if (typeof updateData.customAttributes === 'string') {
-                     dataToUpdate.customAttributes = JSON.parse(updateData.customAttributes);
-                 } else {
-                      // Handle case where it might already be an object (e.g., internal call)
-                      // This depends on how your DTO/validation handles it
-                      logger.warn(`Custom attributes received as non-string for update`, logContext);
-                      // If needed, stringify then parse, or handle object directly if Prisma allows
-                      dataToUpdate.customAttributes = updateData.customAttributes as Prisma.InputJsonValue;
-                 }
+                // Ensure updateData.customAttributes is treated as string before parsing
+                if (typeof updateData.customAttributes === 'string') {
+                    dataToUpdate.customAttributes = JSON.parse(updateData.customAttributes);
+                } else {
+                    // Handle case where it might already be an object (e.g., internal call)
+                    // This depends on how your DTO/validation handles it
+                    logger.warn(`Custom attributes received as non-string for update`, logContext);
+                    // If needed, stringify then parse, or handle object directly if Prisma allows
+                    dataToUpdate.customAttributes = updateData.customAttributes as Prisma.InputJsonValue;
+                }
             } catch (e) {
-                 logContext.error = e;
-                 logger.warn(`Product update failed: Invalid JSON for customAttributes`, logContext);
+                logContext.error = e;
+                logger.warn(`Product update failed: Invalid JSON for customAttributes`, logContext);
                 throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid JSON format for customAttributes.');
             }
         }
     }
 
+    let categoryUpdateOperation: Prisma.ProductCategoryUpdateManyWithoutProductNestedInput | undefined = undefined;
+    if (updateData.categoryIds !== undefined) { // Check if categoryIds array was provided
+        if (updateData.categoryIds === null || updateData.categoryIds.length === 0) {
+            // Remove all category associations
+            categoryUpdateOperation = { set: [] };
+            logContext.categoriesSet = [];
+        } else {
+            // Validate the provided category IDs belong to the tenant
+            const validCategories = await prisma.category.findMany({
+                where: { id: { in: updateData.categoryIds }, tenantId: tenantId },
+                select: { id: true }
+            });
+            if (validCategories.length !== updateData.categoryIds.length) {
+                const invalidIds = updateData.categoryIds.filter(id => !validCategories.some(vc => vc.id === id));
+                throw new ApiError(httpStatus.BAD_REQUEST, `Invalid or non-existent category IDs provided: ${invalidIds.join(', ')}`);
+            }
+            // Prepare the 'set' operation to link product only to these categories
+            categoryUpdateOperation = {
+                set: updateData.categoryIds.map(catId => ({ productId_categoryId: { productId, categoryId: catId } }))
+                // Note: For 'set' with composite keys, you provide the unique identifier object.
+                // If you only want to connect without deleting others, use 'connect'.
+                // If you want to add without deleting others, use 'connectOrCreate' or 'create'.
+                // 'set' is appropriate for replacing the entire list.
+            };
+            logContext.categoriesSet = updateData.categoryIds;
+        }
+        // Assign the operation to the data object
+        dataToUpdate.categories = categoryUpdateOperation;
+    }
+    // ---------------------------------------------------------
+
+    // Check if there's actually anything to update
     if (Object.keys(dataToUpdate).length === 0) {
-         logger.info(`Product update skipped: No valid data provided`, logContext);
-         const currentProduct = await getProductById(productId, tenantId); // Re-fetch current data
-          if (!currentProduct) throw new ApiError(httpStatus.NOT_FOUND, 'Product not found.');
-         return currentProduct;
+        logger.info(`Product update skipped: No valid data provided`, logContext);
+        const currentProduct = await getProductById(productId, tenantId);
+        if (!currentProduct) throw new ApiError(httpStatus.NOT_FOUND, 'Product not found.');
+        return currentProduct;
     }
 
-    // 3. Perform the update using the unique ID
+    // 3. Perform the update
     try {
         const updatedProduct = await prisma.product.update({
-            where: { id: productId }, // Update by primary key ID
-            data: dataToUpdate,
+            where: { id: productId },
+            data: dataToUpdate, // This now includes the 'categories: { set: [...] }' operation if provided
+            include: { // Include categories in the response
+                categories: { select: { category: { select: { id: true, name: true } } } }
+            }
         });
 
         logger.info(`Product updated successfully`, logContext);
-
-        // 4. Invalidate cache
         await invalidateProductCache(tenantId, productId, updatedProduct.sku);
-
-        return updatedProduct;
+        return updatedProduct as SafeProduct; // Cast should be safe
 
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error updating product`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             // Error P2025: Record to update not found.
-             throw new ApiError(httpStatus.NOT_FOUND, 'Product not found during update attempt.');
-         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            // Error P2025: Record to update not found.
+            throw new ApiError(httpStatus.NOT_FOUND, 'Product not found during update attempt.');
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update product.');
     }
 };
@@ -409,13 +544,13 @@ const deleteProductById = async (productId: string, tenantId: string): Promise<v
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error deleting product`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             throw new ApiError(httpStatus.NOT_FOUND, 'Product not found during delete attempt.');
-         }
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') { // Foreign Key violation
-             logger.warn(`Delete failed: Foreign key constraint violation`, logContext);
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot delete product because it is still referenced by other records.');
-         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            throw new ApiError(httpStatus.NOT_FOUND, 'Product not found during delete attempt.');
+        }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') { // Foreign Key violation
+            logger.warn(`Delete failed: Foreign key constraint violation`, logContext);
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot delete product because it is still referenced by other records.');
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to delete product.');
     }
 };
@@ -423,9 +558,9 @@ const deleteProductById = async (productId: string, tenantId: string): Promise<v
 
 // Export the service methods
 export const productService = {
-  createProduct,
-  queryProducts,
-  getProductById,
-  updateProductById,
-  deleteProductById,
+    createProduct,
+    queryProducts,
+    getProductById,
+    updateProductById,
+    deleteProductById,
 };

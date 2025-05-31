@@ -74,6 +74,7 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'inventory:transfer:read', description: 'View transfer history and details' },
     { permissionKey: 'inventory:transfer:cancel', description: 'Cancel a pending inventory transfer' },
     { permissionKey: 'inventory:count:start', description: 'Initiate a stock count process' },
+    { permissionKey: 'inventory:count:read', description: 'Review stock counts' },
     { permissionKey: 'inventory:count:enter', description: 'Enter counted quantities' },
     { permissionKey: 'inventory:count:review', description: 'Review count variances' },
     { permissionKey: 'inventory:count:approve', description: 'Approve and post count variances' },
@@ -106,12 +107,15 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'order:create', description: 'Create new orders (non-POS)' },
     { permissionKey: 'order:read:own', description: 'View orders created by the current user' },
     { permissionKey: 'order:read:any', description: 'View any order within the tenant' },
+    { permissionKey: 'order:read', description: 'View any order within the tenant' },
+    { permissionKey: 'order:read:transactions', description: 'View transactions related to an order' },
     { permissionKey: 'order:update', description: 'Update order details' },
     { permissionKey: 'order:update:status', description: 'Change the status of an order' },
     { permissionKey: 'order:cancel', description: 'Cancel an order' },
     { permissionKey: 'order:manage:payments', description: 'Record or view payment information' },
     { permissionKey: 'order:manage:shipments', description: 'Create/update shipment details' },
     { permissionKey: 'order:manage:returns', description: 'Initiate or process customer returns/exchanges' },
+    { permissionKey: 'return:read', description: 'View return details' },
     // Point of Sale (POS)
     { permissionKey: 'pos:session:start', description: 'Start a new POS session' },
     { permissionKey: 'pos:session:end', description: 'End own POS session' },
@@ -125,6 +129,14 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'pos:discount:apply', description: 'Apply manual discounts during POS checkout' },
     { permissionKey: 'pos:price:override', description: 'Override product prices during POS checkout' },
     { permissionKey: 'pos:sync', description: 'Trigger offline data synchronization' },
+    { permissionKey: 'pos:manage:giftcards', description: 'Manage gift cards and loyalty programs' },
+    { permissionKey: 'pos:manage:layaways', description: 'Manage layaway transactions' },
+    { permissionKey: 'pos:manage:quotes', description: 'Create and manage quotes' },
+    { permissionKey: 'pos:manage:kits', description: 'Manage kits and bundles at POS' },
+    { permissionKey: 'pos:manage:tenders', description: 'Manage payment tenders and methods' },
+    { permissionKey: 'pos:manage:gifts', description: 'Manage gift receipts and messages' },
+    { permissionKey: 'pos:session:list', description: 'List all POS sessions' },
+
     // Reporting
     { permissionKey: 'report:view:sales', description: 'View sales reports' },
     { permissionKey: 'report:view:inventory', description: 'View inventory reports' },
@@ -142,9 +154,17 @@ const CORE_PERMISSIONS = [
     // Tenant Management
     { permissionKey: 'tenant:create', description: 'Create new tenant accounts (Super Admin)' },
     { permissionKey: 'tenant:create:any', description: 'Create new tenant accounts without context (Super Admin)' },
+    { permissionKey: 'tenant:read:any', description: 'View tenant details without context (Super Admin)' },
+    { permissionKey: 'tenant:read', description: 'View tenant details' },
+    { permissionKey: 'tenant:update:any', description: 'Update tenant details without context (Super Admin)' },
+    { permissionKey: 'tenant:update', description: 'Update tenant details' },
+    { permissionKey: 'tenant:delete:any', description: 'Delete tenant accounts without context (Super Admin)' },                    
     { permissionKey: 'tenant:read', description: 'View tenant details (Super Admin)' },
     { permissionKey: 'tenant:update', description: 'Update tenant details (Super Admin)' },
     { permissionKey: 'tenant:delete', description: 'Delete tenant accounts (Super Admin)' },
+    //add tenant:manage:admins only
+    { permissionKey: 'tenant:manage:admins', description: 'Manage tenant admin users (Super Admin)' },
+    { permissionKey: 'tenant:manage:users', description: 'Manage tenant users' },
 ];
 
 // --- Helper Function to create/update a Role with specific permissions ---
@@ -245,7 +265,7 @@ async function main() {
         'supplier:read', 'supplier:create', 'supplier:update',
         'po:create', 'po:read', 'po:update', 'po:approve', 'po:receive', 'po:cancel',
         'customer:create', 'customer:read', 'customer:update', 'customer:delete', 'group:read', 'customer:assign:group',
-        'order:create', 'order:read:any', 'order:update', 'order:update:status', 'order:cancel', 'order:manage:returns',
+        'order:create', 'order:read:any', 'order:update', 'order:update:status', 'order:cancel', 'order:manage:returns', 'return:read',
         'pos:session:read:any', 'pos:session:reconcile',
         'report:view:sales', 'report:view:inventory', 'report:view:pos', 'report:view:purchasing', 'report:view:customer', 'report:export',
         'template:manage',

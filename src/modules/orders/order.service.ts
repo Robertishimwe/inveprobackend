@@ -261,7 +261,7 @@ const getOrderById = async (orderId: string, tenantId: string): Promise<OrderWit
                 items: { include: { product: { select: { id: true, sku: true, name: true } } } },
                 payments: true, // Include payments
                 // --- FIX: Filter returns correctly using foreign key ---
-                returns: { where: { originalOrderId: orderId } }
+                initiatedReturns: { where: { originalOrderId: orderId } }
                 // ------------------------------------------------------
             }
         });
@@ -319,7 +319,7 @@ const updateOrderById = async (orderId: string, updateData: UpdateOrderDto, tena
                  user: { select: { id: true, firstName: true, lastName: true } },
                  items: { include: { product: { select: { id: true, sku: true, name: true } } } },
                  payments: true,
-                 returns: { where: { originalOrderId: orderId } }
+                 initiatedReturns: { where: { originalOrderId: orderId } }
             }
         });
         logger.info(`Order ${existingOrder.orderNumber} updated successfully (New Status: ${updatedOrder.status})`, logContext);

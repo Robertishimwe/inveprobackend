@@ -218,6 +218,45 @@ const queryUsers = async (
 };
 
 /**
+ * Get Tenantless users
+ */
+
+const queryTenantLessUsers = async (
+    filter: Prisma.UserWhereInput,
+    orderBy: Prisma.UserOrderByWithRelationInput[],
+    limit: number,
+    page: number
+): Promise<{ users: SafeUserWithRoles[]; totalResults: number }> => {
+    const skip = (page - 1) * limit;
+    const tenantIdForLog: string | undefined = typeof filter.tenantId === 'string' ? filter.tenantId : undefined;
+    const logContext: LogContext = { function: 'queryUsers', filter: '...', orderBy, limit, page, tenantId: tenantIdForLog };
+    // if (!tenantIdForLog) { throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Tenant context missing.'); }
+
+    try {
+        const [users, totalResults] = await prisma.$transaction([
+            prisma.user.findMany({
+                where: filter,
+                select: { // Consistent selection for list view
+                    id: true, tenantId: true, email: true, firstName: true, lastName: true,
+                    phoneNumber: true, isActive: true, createdAt: true, updatedAt: true,
+                    roles: { select: { role: { select: { id: true, name: true } } } }
+                },
+                orderBy: orderBy, skip: skip, take: limit,
+            }),
+            prisma.user.count({ where: filter }),
+        ]);
+
+        logger.debug(`User query successful, found ${users.length} of ${totalResults} users.`, logContext);
+        return { users: users as SafeUserWithRoles[], totalResults };
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error querying users`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve users.');
+    }
+};
+
+
+/**
  * Get user by ID, ensuring tenant isolation. Includes full role details.
  */
 const getUserById = async (userId: string, tenantId: string): Promise<SafeUserWithRoleDetails | null> => {
@@ -411,6 +450,7 @@ const deleteUserById = async (userId: string, tenantId: string, requestingUserId
 export const userService = {
   createUser,
   queryUsers,
+  queryTenantLessUsers,
   getUserById,
   updateUserById, // Only updates basic info now
   deleteUserById,

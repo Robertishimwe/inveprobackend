@@ -77,6 +77,13 @@ router.delete(
     userController.removeRole
 );
 
+router.get(
+    '/managment/unassigned-users',
+    authMiddleware,
+    checkPermissions(['tenant:manage:admins']), // Check for Super Admin permission
+    userController.getTenantLessUsers
+)
+
 // ---------------------------------------------
 
 export default router;

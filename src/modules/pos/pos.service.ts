@@ -14,8 +14,9 @@ import { PosCheckoutDto } from './dto/pos-checkout.dto';
 // import { StartSessionDto, EndSessionDto, CashTransactionDto, PosCheckoutDto } from './dto';
 // Assuming these are correctly typed and exported
 import { OrderWithDetails } from '@/modules/orders/order.service';
+import { purchaseOrderService } from '../purchase-order/purchase-order.service';
 import { orderService } from '@/modules/orders/order.service';
-import { inventoryService } from '@/modules/inventory/inventory.service';
+// import { inventoryService } from '@/modules/inventory/inventory.service';
 
 
 type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; sessionId?: string | null; terminalId?: string | null; locationId?: string | null; error?: any; [key: string]: any; };
@@ -56,7 +57,7 @@ const startSession = async (data: StartSessionDto, userId: string, posTerminalId
         const session = await prisma.$transaction(async (tx) => {
             const newSession = await tx.posSession.create({
                 data: {
-                    tenantId, locationId, posTerminalId, userId,
+                    tenantId, locationId, userId, posTerminalId,
                     startTime: new Date(),
                     startingCash: startingCashDecimal,
                     status: PosSessionStatus.OPEN,
@@ -471,6 +472,302 @@ const recordCashTransaction = async (sessionId: string, data: CashTransactionDto
 
 // --- Session Query Methods ---
 
+// const processPosCheckout = async (
+//     checkoutData: PosCheckoutDto,
+//     sessionId: string, // Session must be active
+//     tenantId: string,
+//     userId: string, // Cashier ID from auth context
+//     posTerminalId: string,
+//     locationId: string,
+//     ipAddress?: string, // Optional for logging/token association
+//     userAgent?: string // Optional for logging/token association
+// ): Promise<OrderWithDetails> => {
+
+//     const logContext: LogContext = { function: 'processPosCheckout', tenantId, userId, sessionId, locationId, terminalId: posTerminalId, customerId: checkoutData.customerId };
+
+//     // --- Pre-computation and Validation (outside transaction if possible) ---
+//     // 1. Validate Session is active for this user/terminal/location
+//     const currentSession = await getCurrentSession(userId, posTerminalId, locationId, tenantId); // Assumes getCurrentSession exists
+//     if (!currentSession || currentSession.id !== sessionId) {
+//         throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or inactive POS session for this user/terminal/location.');
+//     }
+
+//     // 2. Fetch Products (ensure they exist, are active, and get stock levels)
+//     const productIds = checkoutData.items.map(item => item.productId);
+//     if (productIds.length === 0) {
+//         throw new ApiError(httpStatus.BAD_REQUEST, 'Checkout must include at least one item.');
+//     }
+//     const products = await prisma.product.findMany({
+//         where: { id: { in: productIds }, tenantId, isActive: true }, // Ensure products are active
+//         include: { inventoryItems: { where: { locationId: locationId } } }
+//     });
+//     // Verify all requested products were found and belong to the tenant
+//     if (products.length !== productIds.length) {
+//         const foundIds = products.map(p => p.id);
+//         const missingIds = productIds.filter(id => !foundIds.includes(id));
+//         throw new ApiError(httpStatus.BAD_REQUEST, `Product IDs not found or inactive: ${missingIds.join(', ')}`);
+//     }
+
+//     // 3. Basic Payment Validation (Total amount check)
+//     if (!checkoutData.payments || checkoutData.payments.length === 0) {
+//          throw new ApiError(httpStatus.BAD_REQUEST, 'At least one payment method is required for checkout.');
+//     }
+//     const totalPaymentAmount = checkoutData.payments.reduce((sum, p) => sum + p.amount, 0);
+//     if (totalPaymentAmount <= 0) {
+//         throw new ApiError(httpStatus.BAD_REQUEST, 'Total payment amount must be positive.');
+//     }
+
+//     // --- Transactional Operations ---
+//     try {
+//         const createdOrder = await prisma.$transaction(async (tx) => {
+
+//             // Optional: Re-fetch session within transaction for locking if strict consistency is needed
+//             const session = await tx.posSession.findFirst({ where: { id: sessionId, status: PosSessionStatus.OPEN }, select: { id: true }});
+//             if (!session) throw new Error("Session closed unexpectedly during transaction."); // Internal error state
+
+//             // 4. Prepare Order Items & Check Stock/Calculate Totals (within transaction)
+//             let calculatedSubtotal = new Prisma.Decimal(0);
+//             const orderItemsData: Prisma.OrderItemCreateWithoutOrderInput[] = []; // Use type for nested create
+//             const stockMovements: { productId: string; quantity: Prisma.Decimal; lot?: string | null; serial?: string | null }[] = [];
+//             let needsBackorder = false; // Flag if any item needs backorder
+
+//             const stockChecks: { productId: string, requested: Prisma.Decimal, available: Prisma.Decimal, isTracked: boolean, sku: string }[] = [];
+
+//             for (const itemDto of checkoutData.items) {
+//                 const product = products.find(p => p.id === itemDto.productId);
+//                 // This check should ideally be redundant due to the fetch above, but good safeguard
+//                 if (!product) throw new Error(`Consistency Error: Product ${itemDto.productId} not found during transaction.`);
+
+//                 const requestedQuantity = new Prisma.Decimal(itemDto.quantity);
+//                 if(requestedQuantity.lessThanOrEqualTo(0)) {
+//                     throw new ApiError(httpStatus.BAD_REQUEST, `Quantity for product ${product.sku} must be positive.`);
+//                 }
+
+//                 // Determine Unit Price (use DTO override or product's base price)
+//                 const unitPrice = itemDto.unitPrice !== undefined
+//                     ? new Prisma.Decimal(itemDto.unitPrice)
+//                     : product.basePrice ?? new Prisma.Decimal(0); // Default to 0 if basePrice is null
+
+//                 if (unitPrice.lessThan(0)) {
+//                     throw new ApiError(httpStatus.BAD_REQUEST, `Unit price for product ${product.sku} cannot be negative.`);
+//                 }
+
+//                 const lineTotal = unitPrice.times(requestedQuantity);
+//                 calculatedSubtotal = calculatedSubtotal.plus(lineTotal);
+
+//                 // Prepare data for OrderItem creation using nested create syntax
+//                 orderItemsData.push({
+//                     tenantId, // Include tenantId if defined directly on OrderItem schema (usually inherited)
+//                     product: { // Use relation field name
+//                         connect: { id: product.id } // Connect by ID
+//                     },
+//                     productSnapshot: { sku: product.sku, name: product.name, price: unitPrice.toNumber() }, // Capture at time of sale
+//                     quantity: requestedQuantity,
+//                     unitPrice: unitPrice,
+//                     originalUnitPrice: product.basePrice, // Store original price
+//                     // TODO: Add Tax calculation logic here and assign to taxAmount/taxRate
+//                     taxAmount: 0,
+//                     taxRate: 0,
+//                     lineTotal: lineTotal,
+//                     lotNumber: itemDto.lotNumber, // Pass through if provided
+//                     serialNumber: itemDto.serialNumber, // Pass through if provided
+//                     notes: itemDto.notes,
+//                     // quantityReturned defaults to 0
+//                     // customAttributes: ... // Add if needed
+//                 });
+
+//                 // Check Stock (only for tracked items)
+//                 if (product.isStockTracked) {
+//                     const inventory = product.inventoryItems[0]; // Fetched for the specific location
+//                     const availableQuantity = inventory
+//                         ? inventory.quantityOnHand.minus(inventory.quantityAllocated) // Available = OnHand - Allocated
+//                         : new Prisma.Decimal(0);
+
+//                     // Add details to stock checks list
+//                     stockChecks.push({ productId: product.id, requested: requestedQuantity, available: availableQuantity, isTracked: true, sku: product.sku });
+
+//                     // Handle insufficient stock
+//                     if (availableQuantity.lessThan(requestedQuantity)) {
+//                         // TODO: Implement tenant/product level configuration for backorders
+//                         const allowBackorder = false; // Replace with actual config check
+//                         if (!allowBackorder) {
+//                              throw new ApiError(httpStatus.BAD_REQUEST, `Insufficient stock for product ${product.sku}. Available: ${availableQuantity}, Requested: ${requestedQuantity}`);
+//                         } else {
+//                              logContext.backorderedProduct = product.sku;
+//                              logger.warn(`Product ${product.sku} is backordered`, logContext);
+//                              needsBackorder = true; // Mark order for backorder status
+//                         }
+//                     }
+//                      // Add details needed for stock movement later
+//                     stockMovements.push({
+//                         productId: product.id,
+//                         quantity: requestedQuantity, // Store positive quantity needed
+//                         lot: itemDto.lotNumber,
+//                         serial: itemDto.serialNumber
+//                     });
+//                 } else {
+//                      stockChecks.push({ productId: product.id, requested: requestedQuantity, available: new Prisma.Decimal(Infinity), isTracked: false, sku: product.sku });
+//                      // No stock movement needed for non-tracked items
+//                 }
+//             }
+
+//             // 5. Calculate Final Order Total
+//             const discountTotal = new Prisma.Decimal(checkoutData.discountAmount ?? 0);
+//             const shippingTotal = new Prisma.Decimal(0); // Typically zero for POS
+//             const taxTotal = new Prisma.Decimal(0); // TODO: Implement Tax Calculation Service/Logic
+//             const calculatedTotal = calculatedSubtotal.minus(discountTotal).plus(shippingTotal).plus(taxTotal);
+
+//             // 6. Validate Payment Total against Order Total
+//             const paymentTotalDecimal = new Prisma.Decimal(totalPaymentAmount);
+//             // Use tolerance for potential floating point issues if needed, but Decimal should be precise
+//             if (!paymentTotalDecimal.equals(calculatedTotal)) {
+//                 throw new ApiError(httpStatus.BAD_REQUEST, `Payment total (${paymentTotalDecimal}) does not match calculated order total (${calculatedTotal}). Please verify cart and payment amounts.`);
+//             }
+
+//             // 7. Generate Order Number
+//             const orderNumber = await orderService.generateOrderNumber(tenantId); // Consider if needs to be outside tx
+
+//             // 8. Create Order Header including nested Items and Payments
+//             const order = await tx.order.create({
+//                 data: {
+//                     tenantId,
+//                     orderNumber,
+//                     customerId: checkoutData.customerId,
+//                     locationId, // Use locationId from context
+//                     posTerminalId, // Use terminalId from context
+//                     userId, // Use cashier ID from context
+//                     orderType: OrderType.POS, // Explicitly POS
+//                     status: OrderStatus.COMPLETED, // POS orders usually completed immediately
+//                     orderDate: new Date(),
+//                     subtotal: calculatedSubtotal,
+//                     discountAmount: discountTotal,
+//                     taxAmount: taxTotal,
+//                     shippingCost: shippingTotal,
+//                     totalAmount: calculatedTotal,
+//                     currencyCode: 'USD', // TODO: Get from tenant/location settings
+//                     notes: checkoutData.notes,
+//                     shippingAddress: checkoutData.shippingAddress as Prisma.JsonObject ?? Prisma.JsonNull,
+//                     shippingMethod: checkoutData.shippingAddress ? 'POS Pickup/Ship' : null, // Indicate if shipping involved
+//                     // trackingNumber: null, // Set later if shipped
+//                     isBackordered: needsBackorder,
+//                     items: {
+//                         create: orderItemsData, // Use the correctly formatted array for nested create
+//                     },
+//                     payments: { // Use nested create for payments
+//                         create: checkoutData.payments.map(p => ({
+//                             tenantId, // Include if needed by schema
+//                             paymentMethod: p.paymentMethod,
+//                             amount: new Prisma.Decimal(p.amount),
+//                             currencyCode: 'USD', // Use order currency
+//                             status: PaymentStatus.COMPLETED, // Assume POS payments are completed
+//                             transactionReference: p.transactionReference,
+//                             paymentDate: new Date(),
+//                             processedByUserId: userId, // User processing the payment
+//                         })),
+//                     }
+//                 },
+//                 include: { items: { select: { id: true, productId: true, lotNumber: true, serialNumber: true }}} // Include items to link stock tx and get lot/serial info if needed
+//             });
+//             logContext.orderId = order.id; logContext.orderNumber = order.orderNumber;
+
+//             // 9. Log CASH payment(s) to POS Session Transaction log
+//             const cashPayments = checkoutData.payments.filter(p => p.paymentMethod === PaymentMethod.CASH);
+//             for (const cashPayment of cashPayments) {
+//                  await tx.posSessionTransaction.create({
+//                      data: {
+//                          tenantId, // Add if needed
+//                          posSessionId: sessionId,
+//                          transactionType: PosTransactionType.CASH_SALE,
+//                          amount: new Prisma.Decimal(cashPayment.amount), // Positive amount for cash received
+//                          relatedOrderId: order.id, // Link to the order
+//                          notes: `Cash payment for Order ${order.orderNumber}`
+//                      }
+//                  });
+//             }
+
+//             // 10. Record Stock Movements (Decrease OnHand for tracked items)
+//             for (const move of stockMovements) {
+//                  // Find the created order item to link the transaction
+//                 const orderItem = order.items.find(oi => oi.productId === move.productId);
+//                 if (!orderItem) {
+//                     // This indicates a serious consistency issue if an item was processed but not created
+//                     throw new Error(`Consistency Error: Cannot find created order item for stock movement: Product ID ${move.productId} on Order ID ${order.id}`);
+//                 }
+//                 await inventoryService._recordStockMovement(
+//                      tx, tenantId, userId, move.productId, locationId, // Use order's locationId
+//                      move.quantity.negated(), // Decrease stock (use negated Decimal)
+//                      InventoryTransactionType.SALE,
+//                      null, // Cost of Goods Sold calculation happens later if needed
+//                      { orderId: order.id, orderItemId: orderItem.id }, // Link transaction
+//                      `Order ${order.orderNumber}`,
+//                      // Use lot/serial determined during order item creation/stock check if applicable
+//                      orderItem.lotNumber,
+//                      orderItem.serialNumber
+//                  );
+//             }
+
+//             // 11. Fetch the final order with all details for the response
+//              const finalOrder = await tx.order.findUniqueOrThrow({
+//                 where: { id: order.id },
+//                 include: { // Define includes consistent with OrderWithDetails
+//                     customer: { select: { id: true, firstName: true, lastName: true, email: true } },
+//                     location: { select: { id: true, name: true } },
+//                     user: { select: { id: true, firstName: true, lastName: true } },
+//                     items: { include: { product: { select: { id: true, sku: true, name: true } } } },
+//                     payments: true,
+//                     initiatedReturns: { where: { originalOrderId: order.id } }
+//                 }
+//              });
+
+//             return finalOrder; // Return the created order with includes
+//         }, {
+//             maxWait: 15000, // Allow 15 seconds for the operation to start
+//             timeout: 30000  // <<< Allow 30 seconds for the entire transaction
+//         });
+
+//         logger.info(`POS Checkout successful`, logContext);
+//         return createdOrder as OrderWithDetails; // Cast transaction result
+
+//     } catch (error: any) {
+//         if (error instanceof ApiError) throw error; // Re-throw known validation/stock errors
+//         logContext.error = error;
+//         logger.error(`Error during POS checkout transaction`, logContext);
+//         // Provide a more context-specific error if possible
+//         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Checkout failed: ${error.message || 'Internal Server Error'}`);
+//     }
+// };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 const processPosCheckout = async (
     checkoutData: PosCheckoutDto,
     sessionId: string, // Session must be active
@@ -483,27 +780,32 @@ const processPosCheckout = async (
 ): Promise<OrderWithDetails> => {
 
     const logContext: LogContext = { function: 'processPosCheckout', tenantId, userId, sessionId, locationId, terminalId: posTerminalId, customerId: checkoutData.customerId };
+    const startTime = Date.now();
+    logger.info(`Starting POS checkout process`, logContext);
 
-    // --- Pre-computation and Validation (outside transaction if possible) ---
+    // --- Pre-computation and Validation (outside transaction) ---
     // 1. Validate Session is active for this user/terminal/location
     const currentSession = await getCurrentSession(userId, posTerminalId, locationId, tenantId); // Assumes getCurrentSession exists
     if (!currentSession || currentSession.id !== sessionId) {
+        logger.warn(`Checkout failed: Invalid or inactive POS session provided`, { ...logContext, providedSessionId: sessionId });
         throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or inactive POS session for this user/terminal/location.');
     }
 
-    // 2. Fetch Products (ensure they exist, are active, and get stock levels)
+    // 2. Fetch Products and necessary inventory data
     const productIds = checkoutData.items.map(item => item.productId);
     if (productIds.length === 0) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Checkout must include at least one item.');
     }
     const products = await prisma.product.findMany({
-        where: { id: { in: productIds }, tenantId, isActive: true }, // Ensure products are active
+        where: { id: { in: productIds }, tenantId, isActive: true }, // Ensure product is active
+        // Include inventory specific to the order's location for stock check
         include: { inventoryItems: { where: { locationId: locationId } } }
     });
     // Verify all requested products were found and belong to the tenant
     if (products.length !== productIds.length) {
         const foundIds = products.map(p => p.id);
         const missingIds = productIds.filter(id => !foundIds.includes(id));
+        logger.warn(`Checkout failed: Products not found or inactive`, { ...logContext, missingProductIds: missingIds });
         throw new ApiError(httpStatus.BAD_REQUEST, `Product IDs not found or inactive: ${missingIds.join(', ')}`);
     }
 
@@ -511,161 +813,181 @@ const processPosCheckout = async (
     if (!checkoutData.payments || checkoutData.payments.length === 0) {
          throw new ApiError(httpStatus.BAD_REQUEST, 'At least one payment method is required for checkout.');
     }
-    const totalPaymentAmount = checkoutData.payments.reduce((sum, p) => sum + p.amount, 0);
+    // Calculate total payment amount provided using Prisma.Decimal for precision
+    let totalPaymentAmountDecimal = new Prisma.Decimal(0);
+    try {
+        checkoutData.payments.forEach(p => {
+            if (p.amount <= 0) throw new Error(`Invalid payment amount (${p.amount}) for method ${p.paymentMethod}.`);
+            totalPaymentAmountDecimal = totalPaymentAmountDecimal.plus(new Prisma.Decimal(p.amount));
+        });
+    } catch (e: any) {
+        throw new ApiError(httpStatus.BAD_REQUEST, e.message || 'Invalid payment amount provided.');
+    }
+    if (totalPaymentAmountDecimal.lessThanOrEqualTo(0)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Total payment amount must be positive.');
+    }
+    logContext.totalPaymentProvided = totalPaymentAmountDecimal.toNumber(); // Log total payment
+
+
+        const totalPaymentAmount = checkoutData.payments.reduce((sum, p) => sum + p.amount, 0);
     if (totalPaymentAmount <= 0) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Total payment amount must be positive.');
     }
 
     // --- Transactional Operations ---
+    const transactionStartTime = Date.now();
+    logger.debug(`Starting checkout database transaction`, logContext);
     try {
         const createdOrder = await prisma.$transaction(async (tx) => {
 
-            // Optional: Re-fetch session within transaction for locking if strict consistency is needed
+            // Optional: Re-fetch session within transaction for locking if needed
             const session = await tx.posSession.findFirst({ where: { id: sessionId, status: PosSessionStatus.OPEN }, select: { id: true }});
             if (!session) throw new Error("Session closed unexpectedly during transaction."); // Internal error state
 
-            // 4. Prepare Order Items & Check Stock/Calculate Totals (within transaction)
-            let calculatedSubtotal = new Prisma.Decimal(0);
-            const orderItemsData: Prisma.OrderItemCreateWithoutOrderInput[] = []; // Use type for nested create
+            // 4. Prepare Order Items, Apply Item Discounts, Check Stock, Calculate Totals
+            let calculatedSubtotal = new Prisma.Decimal(0); // Price *after* item discounts
+            const orderItemsData: Prisma.OrderItemCreateWithoutOrderInput[] = [];
             const stockMovements: { productId: string; quantity: Prisma.Decimal; lot?: string | null; serial?: string | null }[] = [];
+            // Collect data for inventory transactions separately for batch create later
+            let inventoryTransactionDataBatch: Prisma.InventoryTransactionCreateManyInput[] = [];
             let needsBackorder = false; // Flag if any item needs backorder
-
-            const stockChecks: { productId: string, requested: Prisma.Decimal, available: Prisma.Decimal, isTracked: boolean, sku: string }[] = [];
 
             for (const itemDto of checkoutData.items) {
                 const product = products.find(p => p.id === itemDto.productId);
-                // This check should ideally be redundant due to the fetch above, but good safeguard
+                // This check should be redundant due to pre-fetch, but good safeguard inside transaction
                 if (!product) throw new Error(`Consistency Error: Product ${itemDto.productId} not found during transaction.`);
 
                 const requestedQuantity = new Prisma.Decimal(itemDto.quantity);
                 if(requestedQuantity.lessThanOrEqualTo(0)) {
+                    // This validation should ideally happen in DTO, but double-check
                     throw new ApiError(httpStatus.BAD_REQUEST, `Quantity for product ${product.sku} must be positive.`);
                 }
 
-                // Determine Unit Price (use DTO override or product's base price)
-                const unitPrice = itemDto.unitPrice !== undefined
+                // Determine base unit price (before item discount)
+                const originalUnitPrice = product.basePrice ?? new Prisma.Decimal(0);
+                // Use override from DTO if provided (permission check might be needed?), otherwise use product price
+                let basePriceForCalc = itemDto.unitPrice !== undefined
                     ? new Prisma.Decimal(itemDto.unitPrice)
-                    : product.basePrice ?? new Prisma.Decimal(0); // Default to 0 if basePrice is null
+                    : originalUnitPrice;
 
-                if (unitPrice.lessThan(0)) {
-                    throw new ApiError(httpStatus.BAD_REQUEST, `Unit price for product ${product.sku} cannot be negative.`);
+                // Apply Item-Level Discount
+                let itemDiscountAmount = new Prisma.Decimal(0);
+                if (itemDto.discountAmount && itemDto.discountAmount > 0) {
+                    // Use fixed amount if provided
+                    itemDiscountAmount = new Prisma.Decimal(itemDto.discountAmount);
+                } else if (itemDto.discountPercent && itemDto.discountPercent > 0) {
+                    // Calculate from percentage if provided
+                    const percent = Math.min(itemDto.discountPercent, 1); // Cap at 100%
+                    itemDiscountAmount = basePriceForCalc.times(percent);
                 }
+                // Ensure discount doesn't make price negative
+                itemDiscountAmount = Prisma.Decimal.min(itemDiscountAmount, basePriceForCalc);
+                const finalUnitPrice = basePriceForCalc.minus(itemDiscountAmount);
 
-                const lineTotal = unitPrice.times(requestedQuantity);
+                if (finalUnitPrice.lessThan(0)) { throw new ApiError(httpStatus.BAD_REQUEST, `Price cannot be negative after discount for ${product.sku}.`); }
+
+                const lineTotal = finalUnitPrice.times(requestedQuantity);
                 calculatedSubtotal = calculatedSubtotal.plus(lineTotal);
 
                 // Prepare data for OrderItem creation using nested create syntax
                 orderItemsData.push({
-                    tenantId, // Include tenantId if defined directly on OrderItem schema (usually inherited)
-                    product: { // Use relation field name
-                        connect: { id: product.id } // Connect by ID
-                    },
-                    productSnapshot: { sku: product.sku, name: product.name, price: unitPrice.toNumber() }, // Capture at time of sale
+                    tenantId, // Include if needed by schema (usually inherited)
+                    product: { connect: { id: product.id } },
+                    productSnapshot: { sku: product.sku, name: product.name, price: finalUnitPrice.toNumber() },
                     quantity: requestedQuantity,
-                    unitPrice: unitPrice,
-                    originalUnitPrice: product.basePrice, // Store original price
-                    // TODO: Add Tax calculation logic here and assign to taxAmount/taxRate
-                    taxAmount: 0,
-                    taxRate: 0,
+                    unitPrice: finalUnitPrice,
+                    originalUnitPrice: originalUnitPrice,
+                    discountAmount: itemDiscountAmount, // Store item discount amount
+                    taxAmount: 0, taxRate: 0, // TODO: Tax
                     lineTotal: lineTotal,
-                    lotNumber: itemDto.lotNumber, // Pass through if provided
-                    serialNumber: itemDto.serialNumber, // Pass through if provided
-                    notes: itemDto.notes,
-                    // quantityReturned defaults to 0
-                    // customAttributes: ... // Add if needed
+                    lotNumber: itemDto.lotNumber, serialNumber: itemDto.serialNumber, notes: itemDto.notes,
                 });
 
-                // Check Stock (only for tracked items)
+                // Check Stock & Prepare Inventory Movement (only for tracked items)
                 if (product.isStockTracked) {
                     const inventory = product.inventoryItems[0]; // Fetched for the specific location
-                    const availableQuantity = inventory
-                        ? inventory.quantityOnHand.minus(inventory.quantityAllocated) // Available = OnHand - Allocated
-                        : new Prisma.Decimal(0);
-
-                    // Add details to stock checks list
-                    stockChecks.push({ productId: product.id, requested: requestedQuantity, available: availableQuantity, isTracked: true, sku: product.sku });
+                    const availableQuantity = inventory ? inventory.quantityOnHand.minus(inventory.quantityAllocated) : new Prisma.Decimal(0);
 
                     // Handle insufficient stock
                     if (availableQuantity.lessThan(requestedQuantity)) {
-                        // TODO: Implement tenant/product level configuration for backorders
-                        const allowBackorder = false; // Replace with actual config check
+                        const allowBackorder = false; // TODO: Get from config
                         if (!allowBackorder) {
                              throw new ApiError(httpStatus.BAD_REQUEST, `Insufficient stock for product ${product.sku}. Available: ${availableQuantity}, Requested: ${requestedQuantity}`);
                         } else {
                              logContext.backorderedProduct = product.sku;
                              logger.warn(`Product ${product.sku} is backordered`, logContext);
-                             needsBackorder = true; // Mark order for backorder status
+                             needsBackorder = true;
                         }
                     }
-                     // Add details needed for stock movement later
+                    // Add to list of movements needed AFTER order creation
                     stockMovements.push({
                         productId: product.id,
                         quantity: requestedQuantity, // Store positive quantity needed
                         lot: itemDto.lotNumber,
-                        serial: itemDto.serialNumber
+                        serial: itemDto.serialNumber // Store single serial if provided here
+                        // Note: If multiple serials needed, adjust DTO and capture logic
                     });
-                } else {
-                     stockChecks.push({ productId: product.id, requested: requestedQuantity, available: new Prisma.Decimal(Infinity), isTracked: false, sku: product.sku });
-                     // No stock movement needed for non-tracked items
                 }
-            }
+            } // End of item loop
 
-            // 5. Calculate Final Order Total
-            const discountTotal = new Prisma.Decimal(checkoutData.discountAmount ?? 0);
+            // 5. Apply Cart-Level Discount & Calculate Final Order Total
+            let cartDiscountValue = new Prisma.Decimal(0);
+            if (checkoutData.cartDiscountAmount && checkoutData.cartDiscountAmount > 0) {
+                 cartDiscountValue = new Prisma.Decimal(checkoutData.cartDiscountAmount);
+            } else if (checkoutData.cartDiscountPercent && checkoutData.cartDiscountPercent > 0) {
+                 const percent = Math.min(checkoutData.cartDiscountPercent, 1);
+                 cartDiscountValue = calculatedSubtotal.times(percent);
+            }
+            cartDiscountValue = Prisma.Decimal.min(cartDiscountValue, calculatedSubtotal); // Cap discount
+
+            const subtotalAfterCartDiscount = calculatedSubtotal.minus(cartDiscountValue);
             const shippingTotal = new Prisma.Decimal(0); // Typically zero for POS
             const taxTotal = new Prisma.Decimal(0); // TODO: Implement Tax Calculation Service/Logic
-            const calculatedTotal = calculatedSubtotal.minus(discountTotal).plus(shippingTotal).plus(taxTotal);
+            const calculatedTotal = subtotalAfterCartDiscount.plus(shippingTotal).plus(taxTotal);
+            logContext.calculatedTotal = calculatedTotal.toNumber();
 
-            // 6. Validate Payment Total against Order Total
-            const paymentTotalDecimal = new Prisma.Decimal(totalPaymentAmount);
-            // Use tolerance for potential floating point issues if needed, but Decimal should be precise
+            const paymentTotalDecimal = new Prisma.Decimal(totalPaymentAmount); // Convert pre-calculated total
+
+            // 6. Validate Payment Total against Final Calculated Order Total
             if (!paymentTotalDecimal.equals(calculatedTotal)) {
-                throw new ApiError(httpStatus.BAD_REQUEST, `Payment total (${paymentTotalDecimal}) does not match calculated order total (${calculatedTotal}). Please verify cart and payment amounts.`);
+                logger.error(`Payment total mismatch`, {...logContext, paymentTotal: paymentTotalDecimal.toNumber()});
+                throw new ApiError(httpStatus.BAD_REQUEST, `Payment total (${paymentTotalDecimal}) does not match final order total (${calculatedTotal}). Verify cart, discounts, and payment amounts.`);
             }
 
             // 7. Generate Order Number
-            const orderNumber = await orderService.generateOrderNumber(tenantId); // Consider if needs to be outside tx
+            const orderNumber = await orderService.generateOrderNumber(tenantId);
 
             // 8. Create Order Header including nested Items and Payments
             const order = await tx.order.create({
                 data: {
-                    tenantId,
-                    orderNumber,
-                    customerId: checkoutData.customerId,
-                    locationId, // Use locationId from context
-                    posTerminalId, // Use terminalId from context
-                    userId, // Use cashier ID from context
-                    orderType: OrderType.POS, // Explicitly POS
-                    status: OrderStatus.COMPLETED, // POS orders usually completed immediately
+                    tenantId, orderNumber, customerId: checkoutData.customerId, locationId, posTerminalId, userId,
+                    orderType: OrderType.POS, status: OrderStatus.COMPLETED, // POS orders usually completed immediately
                     orderDate: new Date(),
-                    subtotal: calculatedSubtotal,
-                    discountAmount: discountTotal,
-                    taxAmount: taxTotal,
-                    shippingCost: shippingTotal,
-                    totalAmount: calculatedTotal,
-                    currencyCode: 'USD', // TODO: Get from tenant/location settings
+                    subtotal: calculatedSubtotal, // Subtotal *before* cart discount
+                    discountAmount: cartDiscountValue, // Store CART discount amount
+                    taxAmount: taxTotal, shippingCost: shippingTotal, totalAmount: calculatedTotal,
+                    currencyCode: 'USD', // TODO: Get from settings
                     notes: checkoutData.notes,
                     shippingAddress: checkoutData.shippingAddress as Prisma.JsonObject ?? Prisma.JsonNull,
-                    shippingMethod: checkoutData.shippingAddress ? 'POS Pickup/Ship' : null, // Indicate if shipping involved
-                    // trackingNumber: null, // Set later if shipped
+                    shippingMethod: checkoutData.shippingAddress ? 'POS Pickup/Ship' : null,
                     isBackordered: needsBackorder,
-                    items: {
-                        create: orderItemsData, // Use the correctly formatted array for nested create
-                    },
+                    items: { create: orderItemsData }, // Use nested create for items
                     payments: { // Use nested create for payments
                         create: checkoutData.payments.map(p => ({
-                            tenantId, // Include if needed by schema
+                            tenantId,
                             paymentMethod: p.paymentMethod,
                             amount: new Prisma.Decimal(p.amount),
                             currencyCode: 'USD', // Use order currency
-                            status: PaymentStatus.COMPLETED, // Assume POS payments are completed
+                            status: PaymentStatus.COMPLETED,
                             transactionReference: p.transactionReference,
                             paymentDate: new Date(),
-                            processedByUserId: userId, // User processing the payment
+                            processedByUserId: userId,
+                            // isRefund: false, // Explicitly mark as not a refund
                         })),
                     }
                 },
-                include: { items: { select: { id: true, productId: true, lotNumber: true, serialNumber: true }}} // Include items to link stock tx and get lot/serial info if needed
+                // Include items to get their generated IDs for linking inventory transactions
+                include: { items: { select: { id: true, productId: true, lotNumber: true, serialNumber: true }}}
             });
             logContext.orderId = order.id; logContext.orderNumber = order.orderNumber;
 
@@ -674,67 +996,105 @@ const processPosCheckout = async (
             for (const cashPayment of cashPayments) {
                  await tx.posSessionTransaction.create({
                      data: {
-                         tenantId, // Add if needed
-                         posSessionId: sessionId,
+                         tenantId, posSessionId: sessionId,
                          transactionType: PosTransactionType.CASH_SALE,
-                         amount: new Prisma.Decimal(cashPayment.amount), // Positive amount for cash received
-                         relatedOrderId: order.id, // Link to the order
+                         amount: new Prisma.Decimal(cashPayment.amount), // Amount paid
+                         relatedOrderId: order.id,
                          notes: `Cash payment for Order ${order.orderNumber}`
                      }
                  });
             }
 
-            // 10. Record Stock Movements (Decrease OnHand for tracked items)
+            // 10. Record Stock Movements (Decrease OnHand for tracked items) & Prepare Transaction Logs
+             inventoryTransactionDataBatch = []; // Re-initialize inside transaction scope
             for (const move of stockMovements) {
-                 // Find the created order item to link the transaction
                 const orderItem = order.items.find(oi => oi.productId === move.productId);
-                if (!orderItem) {
-                    // This indicates a serious consistency issue if an item was processed but not created
-                    throw new Error(`Consistency Error: Cannot find created order item for stock movement: Product ID ${move.productId} on Order ID ${order.id}`);
-                }
-                await inventoryService._recordStockMovement(
-                     tx, tenantId, userId, move.productId, locationId, // Use order's locationId
-                     move.quantity.negated(), // Decrease stock (use negated Decimal)
-                     InventoryTransactionType.SALE,
-                     null, // Cost of Goods Sold calculation happens later if needed
-                     { orderId: order.id, orderItemId: orderItem.id }, // Link transaction
-                     `Order ${order.orderNumber}`,
-                     // Use lot/serial determined during order item creation/stock check if applicable
-                     orderItem.lotNumber,
-                     orderItem.serialNumber
-                 );
+                if (!orderItem) { throw new Error(`Consistency Error: Cannot find created order item for stock movement: Product ID ${move.productId}`); }
+
+                // Update the InventoryItem quantity using the helper
+                await purchaseOrderService._updateInventoryItemQuantity(tx, tenantId, move.productId, locationId, move.quantity.negated());
+
+                // Prepare data for the inventory transaction log
+                inventoryTransactionDataBatch.push({
+                     tenantId, productId: move.productId, locationId: locationId,
+                     transactionType: InventoryTransactionType.SALE,
+                     quantityChange: move.quantity.negated(), // Negative for sale
+                     unitCost: null, // COGS calculated later if needed
+                     relatedOrderId: order.id,
+                     relatedOrderItemId: orderItem.id,
+                     notes: `Order ${order.orderNumber}`,
+                     lotNumber: move.lot, // Lot from the order item DTO
+                     serialNumber: move.serial, // Serial from the order item DTO
+                     userId: userId,
+                     expiryDate: undefined // Add if expiry date is tracked/provided
+                 });
+            }
+            // Batch create transaction logs
+            if (inventoryTransactionDataBatch.length > 0) {
+                 await tx.inventoryTransaction.createMany({ data: inventoryTransactionDataBatch });
+                 logContext.transactionsCreated = inventoryTransactionDataBatch.length;
+                 logger.debug(`Batch created ${inventoryTransactionDataBatch.length} inventory transactions for order ${order.orderNumber}.`, logContext);
             }
 
-            // 11. Fetch the final order with all details for the response
+            // 11. Fetch the final order with all details needed for the response
              const finalOrder = await tx.order.findUniqueOrThrow({
                 where: { id: order.id },
-                include: { // Define includes consistent with OrderWithDetails
+                include: { // Ensure this matches OrderWithDetails type
                     customer: { select: { id: true, firstName: true, lastName: true, email: true } },
                     location: { select: { id: true, name: true } },
                     user: { select: { id: true, firstName: true, lastName: true } },
                     items: { include: { product: { select: { id: true, sku: true, name: true } } } },
                     payments: true,
-                    returns: { where: { originalOrderId: order.id } }
+                    initiatedReturns: { where: { originalOrderId: order.id } }
                 }
              });
 
-            return finalOrder; // Return the created order with includes
+            return finalOrder; // Return the fully created and fetched order
         }, {
-            maxWait: 15000, // Allow 15 seconds for the operation to start
-            timeout: 30000  // <<< Allow 30 seconds for the entire transaction
-        });
+            maxWait: 20000, // Increased maxWait (e.g., 20 seconds)
+            timeout: 45000  // Increased timeout (e.g., 45 seconds)
+        }); // End Transaction
 
+        const checkoutEndTime = Date.now();
+        logContext.durationMs = checkoutEndTime - startTime;
+        logContext.txDurationMs = checkoutEndTime - transactionStartTime;
         logger.info(`POS Checkout successful`, logContext);
         return createdOrder as OrderWithDetails; // Cast transaction result
 
     } catch (error: any) {
-        if (error instanceof ApiError) throw error; // Re-throw known validation/stock errors
+        const errorEndTime = Date.now();
+        logContext.durationMs = errorEndTime - startTime;
+        logContext.txDurationMs = transactionStartTime ? errorEndTime - transactionStartTime : undefined; // Log tx duration if started
+        if (error instanceof ApiError) {
+            logContext.apiError = { statusCode: error.statusCode, message: error.message };
+            logger.warn(`POS Checkout failed: ${error.message}`, logContext); // Log known errors as warnings
+            throw error; // Re-throw ApiError
+        }
+        // Log unexpected errors
         logContext.error = error;
         logger.error(`Error during POS checkout transaction`, logContext);
-        // Provide a more context-specific error if possible
+        // Check for specific Prisma transaction errors
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+             throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Checkout process timed out due to high load. Please try again.');
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Checkout failed: ${error.message || 'Internal Server Error'}`);
     }
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

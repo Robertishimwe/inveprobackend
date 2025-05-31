@@ -112,6 +112,31 @@ const queryRoles = async (filter: Prisma.RoleWhereInput, orderBy: Prisma.RoleOrd
     }
 };
 
+const queryRolesWithOutLinkedData = async (filter: Prisma.RoleWhereInput, orderBy: Prisma.RoleOrderByWithRelationInput[], limit: number, page: number): Promise<{ roles: RoleWithPermissions[], totalResults: number }> => {
+    const skip = (page - 1) * limit;
+    const tenantIdForLog: string | undefined = typeof filter.tenantId === 'string' ? filter.tenantId : undefined;
+    const logContext: LogContext = { function: 'queryRoles', tenantId: tenantIdForLog, limit, page };
+    if (!tenantIdForLog) { throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Tenant context missing.'); }
+
+    try {
+        const [roles, totalResults] = await prisma.$transaction([
+            prisma.role.findMany({
+                where: filter,
+                // Include permissions, sorted for consistency
+                // include: { permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' }}} },
+                orderBy, skip, take: limit
+            }),
+            prisma.role.count({ where: filter }),
+        ]);
+        logger.debug(`Role query successful, found ${roles.length} of ${totalResults}`, logContext);
+        return { roles: roles as RoleWithPermissions[], totalResults };
+    } catch (error: any) {
+         logContext.error = error;
+         logger.error(`Error querying roles`, logContext);
+         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve roles.');
+    }
+};
+
 /**
  * Get role by ID, ensuring tenant isolation. Includes permissions.
  */
@@ -440,6 +465,7 @@ export const roleService = {
     removePermissionFromRole, // Keep single removal
     addPermissionsToRole,     // New batch add
     removePermissionsFromRole,// New batch remove
+    queryRolesWithOutLinkedData
 };
 
 
