@@ -902,7 +902,7 @@ const queryInventoryItems = async (
   page: number
 ): Promise<{
   items: (InventoryItem & {
-    product: Pick<Product, "id" | "sku" | "name">;
+    product: Pick<Product, "id" | "sku" | "name" | "basePrice">; // Added basePrice
     location: Pick<Location, "id" | "name">;
   })[];
   totalResults: number;
@@ -928,7 +928,7 @@ const queryInventoryItems = async (
       prisma.inventoryItem.findMany({
         where: filter, // Pass original filter to Prisma
         include: {
-          product: { select: { id: true, sku: true, name: true } },
+          product: { select: { id: true, sku: true, name: true, basePrice: true } }, // Added basePrice
           location: { select: { id: true, name: true } },
         },
         orderBy,
@@ -943,7 +943,7 @@ const queryInventoryItems = async (
     );
     return {
       items: items as (InventoryItem & {
-        product: Pick<Product, "id" | "sku" | "name">;
+        product: Pick<Product, "id" | "sku" | "name" | "basePrice">; // Added basePrice
         location: Pick<Location, "id" | "name">;
       })[],
       totalResults,
