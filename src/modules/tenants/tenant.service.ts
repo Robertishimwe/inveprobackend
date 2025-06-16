@@ -139,6 +139,11 @@ const createTenantWithDefaults = async (data: CreateTenantDto): Promise<Tenant> 
                     name: data.name,
                     status: TenantStatus.ACTIVE, // Default to ACTIVE
                     configuration: initialConfigObject ?? Prisma.JsonNull, // Assign object or JsonNull
+                    companyPhone: data.companyPhone,
+                    website: data.website,
+                    email: data.email,
+                    companyAddress: data.companyAddress,
+                    tin: data.tin,
                 }
             });
             logContext.tenantId = tenant.id;
@@ -269,6 +274,13 @@ const updateTenantById = async (tenantId: string, updateData: UpdateTenantDto): 
              }
          }
      }
+
+     // Add new fields
+     if (updateData.companyPhone !== undefined) dataToUpdate.companyPhone = updateData.companyPhone;
+     if (updateData.website !== undefined) dataToUpdate.website = updateData.website;
+     if (updateData.email !== undefined) dataToUpdate.email = updateData.email;
+     if (updateData.companyAddress !== undefined) dataToUpdate.companyAddress = updateData.companyAddress;
+     if (updateData.tin !== undefined) dataToUpdate.tin = updateData.tin;
 
      if (Object.keys(dataToUpdate).length === 0) {
         logger.info(`Tenant update skipped: No effective changes provided`, logContext);

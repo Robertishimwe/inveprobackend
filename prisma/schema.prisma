@@ -178,6 +178,11 @@ model Tenant {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   deactivatedAt DateTime?     @map("deactivated_at")
+  companyPhone  String?
+  website       String?
+  email         String?
+  companyAddress String?
+  tin           String?
 
   // Relations
   users                 User[]

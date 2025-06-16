@@ -1,5 +1,5 @@
 // src/modules/tenants/dto/create-tenant.dto.ts
-import { IsString, IsNotEmpty, MaxLength, IsOptional, IsJSON, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, MaxLength, IsOptional, IsJSON, IsUUID, IsEmail } from 'class-validator';
 
 export class CreateTenantDto {
     @IsString()
@@ -18,4 +18,29 @@ export class CreateTenantDto {
     @IsJSON({ message: 'Initial configuration must be a valid JSON string.' })
     @IsOptional()
     initialConfiguration?: string;
+
+    @IsString()
+    @IsOptional()
+    @MaxLength(50)
+    companyPhone?: string;
+
+    @IsString()
+    @IsOptional()
+    @MaxLength(255)
+    website?: string;
+
+    @IsEmail()
+    @IsOptional()
+    @MaxLength(255)
+    email?: string;
+
+    @IsString()
+    @IsOptional()
+    @MaxLength(500)
+    companyAddress?: string;
+
+    @IsString()
+    @IsOptional()
+    @MaxLength(50)
+    tin?: string;
 }
