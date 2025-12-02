@@ -13,7 +13,7 @@ import { CreateReturnDto } from './dto'; // DTOs for create/update
 import { purchaseOrderService } from '../purchase-order/purchase-order.service';
 
 // Define log context type if not already defined globally
-type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; returnId?: string | null; orderId?: string | null; data?: any; error?: any; [key: string]: any; };
+type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; returnId?: string | null; orderId?: string | null; data?: any; error?: any;[key: string]: any; };
 
 // Type helper for detailed return response
 export type ReturnWithDetails = Return & {
@@ -60,7 +60,7 @@ const createReturn = async (
     // --- FIX 1: Use explicit status checks ---
     const forbiddenReturnStatuses: OrderStatus[] = [OrderStatus.CANCELLED, OrderStatus.PENDING_PAYMENT];
     if (forbiddenReturnStatuses.includes(originalOrder.status)) {
-    // ---------------------------------------
+        // ---------------------------------------
         throw new ApiError(httpStatus.BAD_REQUEST, `Cannot return items from an order with status ${originalOrder.status}.`);
     }
 
@@ -83,12 +83,12 @@ const createReturn = async (
 
     for (const itemDto of data.items) {
         let originalItem: OrderItem | undefined;
-        if(itemDto.originalOrderItemId) {
-             originalItem = originalItemsMap.get(itemDto.originalOrderItemId);
-             // Extra check: Ensure the product ID matches if originalOrderItemId is provided
-             if (originalItem && originalItem.productId !== itemDto.productId) {
-                  throw new ApiError(httpStatus.BAD_REQUEST, `Product ID ${itemDto.productId} does not match the original order item ${itemDto.originalOrderItemId}.`);
-             }
+        if (itemDto.originalOrderItemId) {
+            originalItem = originalItemsMap.get(itemDto.originalOrderItemId);
+            // Extra check: Ensure the product ID matches if originalOrderItemId is provided
+            if (originalItem && originalItem.productId !== itemDto.productId) {
+                throw new ApiError(httpStatus.BAD_REQUEST, `Product ID ${itemDto.productId} does not match the original order item ${itemDto.originalOrderItemId}.`);
+            }
         } else {
             // If no original ID, try to find *an* item for that product on the order (less precise)
             originalItem = originalOrder.items.find(oi => oi.productId === itemDto.productId);
@@ -131,15 +131,16 @@ const createReturn = async (
 
     // Validate Refund Payments Total
     const totalRefundPayment = data.refundPayments?.reduce((sum, p) => sum.plus(new Prisma.Decimal(p.amount)), new Prisma.Decimal(0)) ?? new Prisma.Decimal(0);
-    if (!totalRefundPayment.equals(calculatedRefundSubtotal)) {   logger.warn(
-        `Refund payment total (${totalRefundPayment}) does not match calculated item refund subtotal (${calculatedRefundSubtotal}) for original order ${data.originalOrderId}. Proceeding with provided payment amount.`,
-        logContext // Pass the existing context
-    );
-    // NOTE: Depending on business rules, you might want to:
-    // 1. Throw an ApiError(httpStatus.BAD_REQUEST, 'Refund payment total does not match...') instead of just warning.
-    // 2. Adjust the refund logic (e.g., only process up to calculatedSubtotal, handle difference).
-    // Current implementation allows processing the provided payment amounts even if they differ.
-}
+    if (!totalRefundPayment.equals(calculatedRefundSubtotal)) {
+        logger.warn(
+            `Refund payment total (${totalRefundPayment}) does not match calculated item refund subtotal (${calculatedRefundSubtotal}) for original order ${data.originalOrderId}. Proceeding with provided payment amount.`,
+            logContext // Pass the existing context
+        );
+        // NOTE: Depending on business rules, you might want to:
+        // 1. Throw an ApiError(httpStatus.BAD_REQUEST, 'Refund payment total does not match...') instead of just warning.
+        // 2. Adjust the refund logic (e.g., only process up to calculatedSubtotal, handle difference).
+        // Current implementation allows processing the provided payment amounts even if they differ.
+    }
     const finalTotalRefundAmount = totalRefundPayment;
 
 
@@ -178,94 +179,94 @@ const createReturn = async (
                 //     // ----------------------------
                 //     items: { create: returnItemsCreateInput } // Use corrected nested create input
                 // },
-                 // --- FIX 4: Include items here with ID to link stock adjustments ---
-                 include: { items: { select: { id: true, productId: true, lotNumber: true, serialNumber: true } } }
-                 // ----------------------------------------------------------------
+                // --- FIX 4: Include items here with ID to link stock adjustments ---
+                include: { items: { select: { id: true, productId: true, lotNumber: true, serialNumber: true } } }
+                // ----------------------------------------------------------------
             });
             logContext.returnId = returnHeader.id;
 
-             // --- FIX 4: Create map from *created* return items ---
+            // --- FIX 4: Create map from *created* return items ---
             //  const createdReturnItemMap = new Map(returnHeader.items.map(item => [`${item.productId}-${item.lotNumber ?? ''}-${item.serialNumber ?? ''}`, item.id])); // Create a composite key for lookup if needed, or just product ID if unique per return
-             const createdReturnItemMapByProdId = new Map(returnHeader.items.map(item => [item.productId, item.id])); // Simpler map if one line per product
-             // ------------------------------------------------------
+            const createdReturnItemMapByProdId = new Map(returnHeader.items.map(item => [item.productId, item.id])); // Simpler map if one line per product
+            // ------------------------------------------------------
 
             // 3. Create Refund Payment Records
             if (data.refundPayments && data.refundPayments.length > 0) {
-                 const refundPaymentsData: Prisma.PaymentCreateManyInput[] = data.refundPayments.map(p => ({ // <<< FIX 5: Use PaymentCreateManyInput
-                     tenantId,
-                     orderId: data.originalOrderId, // Link to original order
-                     returnId: returnHeader.id,     // Link payment *to this return*
-                     paymentMethod: p.paymentMethod,
-                     amount: new Prisma.Decimal(p.amount), // Store positive amount for refund payment record
-                     currencyCode: originalOrder.currencyCode,
-                     status: PaymentStatus.COMPLETED, // Assume refund processed
-                     transactionReference: p.transactionReference,
-                     paymentDate: new Date(),
-                     processedByUserId: userId,
-                     notes: `Refund for Return ${returnNumber}`
-                 }));
-                 await tx.payment.createMany({ data: refundPaymentsData });
+                const refundPaymentsData: Prisma.PaymentCreateManyInput[] = data.refundPayments.map(p => ({ // <<< FIX 5: Use PaymentCreateManyInput
+                    tenantId,
+                    orderId: data.originalOrderId, // Link to original order
+                    returnId: returnHeader.id,     // Link payment *to this return*
+                    paymentMethod: p.paymentMethod,
+                    amount: new Prisma.Decimal(p.amount), // Store positive amount for refund payment record
+                    currencyCode: originalOrder.currencyCode,
+                    status: PaymentStatus.COMPLETED, // Assume refund processed
+                    transactionReference: p.transactionReference,
+                    paymentDate: new Date(),
+                    processedByUserId: userId,
+                    notes: `Refund for Return ${returnNumber}`
+                }));
+                await tx.payment.createMany({ data: refundPaymentsData });
             }
 
             // 4. Log CASH Refund(s) to POS Session Transaction log
             const cashRefunds = data.refundPayments?.filter(p => p.paymentMethod === PaymentMethod.CASH) ?? [];
             for (const cashRefund of cashRefunds) { // <<< FIX 6: Use cashRefund variable
-                 if (data.posSessionId) {
-                      await tx.posSessionTransaction.create({
-                          data: {
-                              tenantId, posSessionId: data.posSessionId,
-                              transactionType: PosTransactionType.CASH_REFUND,
-                              amount: new Prisma.Decimal(cashRefund.amount), // <<< FIX 6: Use cashRefund.amount
-                              relatedOrderId: data.originalOrderId,
-                              notes: `Cash refund for Return ${returnNumber}`
-                          }
-                      });
-                 } else { logger.warn(`Cash refund processed for return ${returnHeader.id} but no POS session provided.`, logContext); }
+                if (data.posSessionId) {
+                    await tx.posSessionTransaction.create({
+                        data: {
+                            tenantId, posSessionId: data.posSessionId,
+                            transactionType: PosTransactionType.CASH_REFUND,
+                            amount: new Prisma.Decimal(cashRefund.amount), // <<< FIX 6: Use cashRefund.amount
+                            relatedOrderId: data.originalOrderId,
+                            notes: `Cash refund for Return ${returnNumber}`
+                        }
+                    });
+                } else { logger.warn(`Cash refund processed for return ${returnHeader.id} but no POS session provided.`, logContext); }
             }
 
             // 5. Perform Stock Adjustments
             const inventoryTransactionDataBatch: Prisma.InventoryTransactionCreateManyInput[] = [];
             for (const adj of stockAdjustments) {
-                 // --- FIX 4: Find created return item ID to link transaction ---
-                 // Use the map created earlier. This assumes one return line per product for simplicity. Refine if needed.
-                 const createdReturnItemId = createdReturnItemMapByProdId.get(adj.productId);
-                 // -------------------------------------------------------------
-                 if (!createdReturnItemId) {
-                     logger.error(`Consistency error: Could not find created return item for stock adjustment`, { ...logContext, productId: adj.productId });
-                     continue;
-                 }
+                // --- FIX 4: Find created return item ID to link transaction ---
+                // Use the map created earlier. This assumes one return line per product for simplicity. Refine if needed.
+                const createdReturnItemId = createdReturnItemMapByProdId.get(adj.productId);
+                // -------------------------------------------------------------
+                if (!createdReturnItemId) {
+                    logger.error(`Consistency error: Could not find created return item for stock adjustment`, { ...logContext, productId: adj.productId });
+                    continue;
+                }
 
-                 if (adj.condition === ReturnItemCondition.SELLABLE) {
-                     await purchaseOrderService._updateInventoryItemQuantity(tx, tenantId, adj.productId, adj.locationId, adj.quantityChange); // Restock item
-                     inventoryTransactionDataBatch.push({
-                         tenantId, userId, productId: adj.productId, locationId: adj.locationId,
-                         quantityChange: adj.quantityChange, // Positive for restock
-                         transactionType: InventoryTransactionType.RETURN_RESTOCK,
-                         unitCost: adj.unitCost, // Likely null or estimated
-                         relatedReturnItemId: createdReturnItemId, // Link transaction to return item
-                         notes: `Restock from Return ${returnNumber} (Condition: ${adj.condition})`,
-                         lotNumber: adj.lot, serialNumber: adj.serial,
-                     });
-                 } else { /* Handle disposal logging/transaction if needed */ }
+                if (adj.condition === ReturnItemCondition.SELLABLE) {
+                    await purchaseOrderService._updateInventoryItemQuantity(tx, tenantId, adj.productId, adj.locationId, adj.quantityChange); // Restock item
+                    inventoryTransactionDataBatch.push({
+                        tenantId, userId, productId: adj.productId, locationId: adj.locationId,
+                        quantityChange: adj.quantityChange, // Positive for restock
+                        transactionType: InventoryTransactionType.RETURN_RESTOCK,
+                        unitCost: adj.unitCost, // Likely null or estimated
+                        relatedReturnItemId: createdReturnItemId, // Link transaction to return item
+                        notes: `Restock from Return ${returnNumber} (Condition: ${adj.condition})`,
+                        lotNumber: adj.lot, serialNumber: adj.serial,
+                    });
+                } else { /* Handle disposal logging/transaction if needed */ }
             }
             // Batch create inventory transactions
-           if (inventoryTransactionDataBatch.length > 0) {
-               await tx.inventoryTransaction.createMany({ data: inventoryTransactionDataBatch });
-               logger.debug(`Created ${inventoryTransactionDataBatch.length} stock adjustment transactions for return ${returnHeader.id}`, logContext);
-           }
+            if (inventoryTransactionDataBatch.length > 0) {
+                await tx.inventoryTransaction.createMany({ data: inventoryTransactionDataBatch });
+                logger.debug(`Created ${inventoryTransactionDataBatch.length} stock adjustment transactions for return ${returnHeader.id}`, logContext);
+            }
 
 
             // 6. Fetch final return details for response (using the ID from the created header)
-             const finalReturn = await tx.return.findUniqueOrThrow({
-                 where: { id: returnHeader.id },
-                 include: { // Consistent includes for response type ReturnWithDetails
-                     originalOrder: { select: { id: true, orderNumber: true } }, location: { select: { id: true, name: true } },
-                     customer: { select: { id: true, firstName: true, lastName: true, email: true } },
-                     processedByUser: { select: { id: true, firstName: true, lastName: true } },
-                     items: { include: { product: { select: { id: true, sku: true, name: true } }, originalOrderItem: { select: { id: true, unitPrice: true, quantity: true }} } },
-                     refundPayments: true, exchangeOrder: { select: { id: true, orderNumber: true } },
-                 }
-             });
+            const finalReturn = await tx.return.findUniqueOrThrow({
+                where: { id: returnHeader.id },
+                include: { // Consistent includes for response type ReturnWithDetails
+                    originalOrder: { select: { id: true, orderNumber: true } }, location: { select: { id: true, name: true } },
+                    customer: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    processedByUser: { select: { id: true, firstName: true, lastName: true } },
+                    items: { include: { product: { select: { id: true, sku: true, name: true } }, originalOrderItem: { select: { id: true, unitPrice: true, quantity: true } } } },
+                    refundPayments: true, exchangeOrder: { select: { id: true, orderNumber: true } },
+                }
+            });
 
             return finalReturn;
         });
@@ -274,11 +275,11 @@ const createReturn = async (
         return createdReturnWithDetails as ReturnWithDetails;
 
     } catch (error: any) {
-         if (error instanceof ApiError) throw error;
-         logContext.error = error;
-         logger.error(`Error creating return transaction`, logContext);
-         // Ensure error is always thrown from catch block
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to process return.');
+        if (error instanceof ApiError) throw error;
+        logContext.error = error;
+        logger.error(`Error creating return transaction`, logContext);
+        // Ensure error is always thrown from catch block
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to process return.');
     }
 };
 
@@ -290,11 +291,11 @@ const queryReturns = async (filter: Prisma.ReturnWhereInput, orderBy: Prisma.Ret
     if (!tenantIdForLog) { throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Tenant context missing.'); }
     try {
         const [returns, totalResults] = await prisma.$transaction([
-            prisma.return.findMany({ where: filter, orderBy, skip, take: limit, include: { /* Add necessary summary includes */ originalOrder: {select: {orderNumber: true}}, customer: {select: {firstName: true, lastName: true}}, location: {select:{name: true}} } }),
+            prisma.return.findMany({ where: filter, orderBy, skip, take: limit, include: { /* Add necessary summary includes */ originalOrder: { select: { orderNumber: true } }, customer: { select: { firstName: true, lastName: true } }, location: { select: { name: true } } } }),
             prisma.return.count({ where: filter }),
         ]);
-         logger.debug(`Return query successful, found ${returns.length} of ${totalResults}`, logContext);
-         return { returns, totalResults };
+        logger.debug(`Return query successful, found ${returns.length} of ${totalResults}`, logContext);
+        return { returns, totalResults };
     } catch (error: any) {
         logContext.error = error; logger.error(`Error querying returns`, logContext);
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve returns.');
@@ -303,7 +304,7 @@ const queryReturns = async (filter: Prisma.ReturnWhereInput, orderBy: Prisma.Ret
 
 /** Get Return By ID */
 const getReturnById = async (returnId: string, tenantId: string): Promise<ReturnWithDetails | null> => {
-     const logContext: LogContext = { function: 'getReturnById', returnId, tenantId };
+    const logContext: LogContext = { function: 'getReturnById', returnId, tenantId };
     try {
         const returnData = await prisma.return.findFirst({
             where: { id: returnId, tenantId },
@@ -311,9 +312,9 @@ const getReturnById = async (returnId: string, tenantId: string): Promise<Return
                 originalOrder: { select: { id: true, orderNumber: true } }, location: { select: { id: true, name: true } },
                 customer: { select: { id: true, firstName: true, lastName: true, email: true } },
                 processedByUser: { select: { id: true, firstName: true, lastName: true } },
-                items: { include: { product: { select: { id: true, sku: true, name: true } }, originalOrderItem: { select: { id: true, unitPrice: true, quantity: true }} } },
+                items: { include: { product: { select: { id: true, sku: true, name: true } }, originalOrderItem: { select: { id: true, unitPrice: true, quantity: true } } } },
                 refundPayments: true, exchangeOrder: { select: { id: true, orderNumber: true } },
-             }
+            }
         });
         if (!returnData) { logger.warn(`Return not found or tenant mismatch`, logContext); return null; }
         logger.debug(`Return found successfully`, logContext);
@@ -326,43 +327,43 @@ const getReturnById = async (returnId: string, tenantId: string): Promise<Return
 
 /** Update Return Status */
 const updateReturnStatus = async (returnId: string, status: ReturnStatus, tenantId: string, userId: string, notes?: string): Promise<Return> => {
-     const logContext: LogContext = { function: 'updateReturnStatus', returnId, tenantId, userId, status, notes };
-     const existingReturn = await prisma.return.findFirst({ where: { id: returnId, tenantId }});
-     if (!existingReturn) throw new ApiError(httpStatus.NOT_FOUND, 'Return not found.');
+    const logContext: LogContext = { function: 'updateReturnStatus', returnId, tenantId, userId, status, notes };
+    const existingReturn = await prisma.return.findFirst({ where: { id: returnId, tenantId } });
+    if (!existingReturn) throw new ApiError(httpStatus.NOT_FOUND, 'Return not found.');
 
-     // --- FIX 6: Remove CANCELLED from allowed transitions (or add to enum if needed) ---
-     const allowedTransitions: Partial<Record<ReturnStatus, ReturnStatus[]>> = {
-         [ReturnStatus.PENDING]: [ReturnStatus.APPROVED, ReturnStatus.REJECTED], // Example: Allow cancelling PENDING? Add CANCELLED here if needed
-         [ReturnStatus.APPROVED]: [ReturnStatus.COMPLETED /*, ReturnStatus.CANCELLED? */], // Allow completing or maybe cancelling approved
-     };
-     // ---------------------------------------------------------------------------
-      if (!allowedTransitions[existingReturn.status]?.includes(status)) {
-          throw new ApiError(httpStatus.BAD_REQUEST, `Cannot transition return status from ${existingReturn.status} to ${status}.`);
-      }
-      if (existingReturn.status === status) {
+    if (existingReturn.status === status) {
         logger.info(`Return status is already ${status}. No update needed.`, logContext);
-           // Return the existing record. Fetch full details if needed for response type consistency.
-           // If 'existingReturn' doesn't have all needed includes, fetch again:
-           // const fullReturn = await getReturnById(returnId, tenantId);
-           // if (!fullReturn) throw new ApiError(httpStatus.NOT_FOUND, 'Return not found after status check.');
-           // return fullReturn;
-           // Assuming 'existingReturn' has enough data or the caller handles potential missing includes:
-           return existingReturn;
-      }
+        // Check if notes are being updated. If so, proceed to update.
+        if (notes) {
+            // Proceed to update (fall through)
+        } else {
+            return existingReturn;
+        }
+    }
 
-     try {
+    // --- FIX 6: Remove CANCELLED from allowed transitions (or add to enum if needed) ---
+    const allowedTransitions: Partial<Record<ReturnStatus, ReturnStatus[]>> = {
+        [ReturnStatus.PENDING]: [ReturnStatus.APPROVED, ReturnStatus.REJECTED], // Example: Allow cancelling PENDING? Add CANCELLED here if needed
+        [ReturnStatus.APPROVED]: [ReturnStatus.COMPLETED /*, ReturnStatus.CANCELLED? */], // Allow completing or maybe cancelling approved
+    };
+    // ---------------------------------------------------------------------------
+    if (existingReturn.status !== status && !allowedTransitions[existingReturn.status]?.includes(status)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Cannot transition return status from ${existingReturn.status} to ${status}.`);
+    }
+
+    try {
         const updatedReturn = await prisma.return.update({
             where: { id: returnId },
             data: { status: status, reason: notes ? `${existingReturn.reason ?? ''}\n[${status} by User ${userId}]: ${notes}`.trim() : existingReturn.reason, updatedAt: new Date() }
         });
         logger.info(`Return ${returnId} status updated to ${status}`, logContext);
         return updatedReturn;
-     } catch (error: any) {
+    } catch (error: any) {
         logContext.error = error; logger.error(`Error updating return status`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') { /* handle not found */ }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') { /* handle not found */ }
         // --- FIX 3: Ensure error thrown ---
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update return status.');
-     }
+    }
 };
 
 

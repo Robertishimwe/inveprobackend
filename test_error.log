@@ -1,0 +1,9 @@
+{
+  "code": 400,
+  "message": "Input validation failed: property isActive should not exist",
+  "details": {
+    "errors": [
+      "property isActive should not exist"
+    ]
+  }
+}

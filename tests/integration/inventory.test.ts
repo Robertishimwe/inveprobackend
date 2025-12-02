@@ -1,159 +1,214 @@
 import request from 'supertest';
-import { app } from '@/app'; // Assuming your Express app is exported from @/app
-import { prisma } from '@/config'; // Assuming your Prisma client is exported from @/config
-import { Tenant, User, Location, Product, InventoryItem } from '@prisma/client';
-import { generateToken } from '@/utils/auth'; // Assuming a token generation utility
+import httpStatus from 'http-status';
+import jwt from 'jsonwebtoken';
+import app from '../../src/app';
+import { prisma } from '../../src/config';
+import bcrypt from 'bcryptjs';
 
-describe('Inventory API - /api/v1/inventory/items', () => {
-  let tenant: Tenant;
-  let user: User;
-  let token: string;
-  let location: Location;
-  let product: Product;
-  let inventoryItem: InventoryItem;
+describe('Inventory Routes', () => {
+    let tenantId: string;
+    let adminAccessToken: string;
+    let productId: string;
+    let sourceLocationId: string;
+    let destinationLocationId: string;
 
-  const testTenantData = {
-    name: 'Test Tenant Inventory',
-    subdomain: `test-inventory-${Date.now()}`,
-  };
+    const adminEmail = `admin-inv-${Date.now()}@example.com`;
+    const adminPassword = 'password123';
+    const hashedPassword = bcrypt.hashSync(adminPassword, 8);
 
-  const testUserData = {
-    email: `testuser-inventory-${Date.now()}@example.com`,
-    firstName: 'Test',
-    lastName: 'User',
-    password: 'Password123!',
-  };
+    beforeAll(async () => {
+        // 1. Create Tenant
+        const tenant = await prisma.tenant.create({
+            data: {
+                name: `Inventory Test Tenant ${Date.now()}`,
+                status: 'ACTIVE',
+            },
+        });
+        tenantId = tenant.id;
 
-  const testLocationData = {
-    name: 'Test Location Inventory',
-    address: '123 Test St',
-  };
+        // 2. Create Permissions
+        const permissions = [
+            'inventory:adjust',
+            'inventory:read',
+            'inventory:transfer:create',
+            'inventory:transfer:ship',
+            'inventory:transfer:receive',
+        ];
 
-  const testProductData = {
-    name: 'Test Product Inventory',
-    sku: `SKU-INV-${Date.now()}`,
-    description: 'A product for inventory testing',
-    basePrice: 10.99, // Ensure basePrice is included
-    isStockTracked: true,
-  };
+        const createdPermissions = [];
+        for (const perm of permissions) {
+            const p = await prisma.permission.upsert({
+                where: { permissionKey: perm },
+                update: {},
+                create: { permissionKey: perm, description: `Test permission ${perm}` },
+            });
+            createdPermissions.push(p);
+        }
 
-  beforeAll(async () => {
-    // 1. Create Tenant
-    tenant = await prisma.tenant.create({ data: testTenantData });
+        // 3. Create Admin Role
+        const role = await prisma.role.create({
+            data: {
+                name: 'Inventory Admin',
+                tenantId: tenant.id,
+                description: 'Inventory Admin Role',
+            },
+        });
 
-    // 2. Create User
-    user = await prisma.user.create({
-      data: {
-        ...testUserData,
-        tenantId: tenant.id,
-        // Add other required fields for user creation if any
-        role: 'ADMIN', // Assuming a role is needed
-        isEmailVerified: true,
-      },
+        // 4. Assign Permissions to Role
+        for (const perm of createdPermissions) {
+            await prisma.rolePermission.create({
+                data: {
+                    roleId: role.id,
+                    permissionId: perm.id,
+                },
+            });
+        }
+
+        // 5. Create Admin User
+        const adminUser = await prisma.user.create({
+            data: {
+                email: adminEmail,
+                passwordHash: hashedPassword,
+                tenantId: tenant.id,
+                firstName: 'Admin',
+                lastName: 'User',
+                isActive: true,
+            },
+        });
+
+        // 6. Assign Role to Admin User
+        await prisma.userRole.create({
+            data: {
+                userId: adminUser.id,
+                roleId: role.id,
+            },
+        });
+
+        // 7. Generate Access Token
+        const payload = {
+            userId: adminUser.id,
+            tenantId: adminUser.tenantId,
+        };
+        adminAccessToken = jwt.sign(payload, process.env.JWT_SECRET as string, { expiresIn: '1h' });
+
+        // 8. Create Test Product
+        const product = await prisma.product.create({
+            data: {
+                tenantId,
+                sku: `INV-PROD-${Date.now()}`,
+                name: 'Inventory Test Product',
+                productType: 'STANDARD',
+                basePrice: 100,
+            },
+        });
+        productId = product.id;
+
+        // 9. Create Test Locations
+        const loc1 = await prisma.location.create({
+            data: {
+                tenantId,
+                name: 'Source Warehouse',
+                locationType: 'WAREHOUSE',
+            },
+        });
+        sourceLocationId = loc1.id;
+
+        const loc2 = await prisma.location.create({
+            data: {
+                tenantId,
+                name: 'Dest Store',
+                locationType: 'STORE',
+            },
+        });
+        destinationLocationId = loc2.id;
     });
 
-    // 3. Generate Token (assuming a simple utility or direct creation)
-    // In a real app, this might involve a login step or a more complex token generation
-    token = generateToken({ userId: user.id, tenantId: tenant.id, role: user.role });
-
-
-    // 4. Create Location
-    location = await prisma.location.create({
-      data: {
-        ...testLocationData,
-        tenantId: tenant.id,
-      },
+    afterAll(async () => {
+        await prisma.inventoryAdjustmentItem.deleteMany({ where: { tenantId } });
+        await prisma.inventoryAdjustment.deleteMany({ where: { tenantId } });
+        await prisma.inventoryTransferItem.deleteMany({ where: { tenantId } });
+        await prisma.inventoryTransfer.deleteMany({ where: { tenantId } });
+        await prisma.inventoryTransaction.deleteMany({ where: { tenantId } });
+        await prisma.inventoryItem.deleteMany({ where: { tenantId } });
+        await prisma.product.deleteMany({ where: { tenantId } });
+        await prisma.location.deleteMany({ where: { tenantId } });
+        await prisma.user.deleteMany({ where: { tenantId } });
+        await prisma.role.deleteMany({ where: { tenantId } });
+        await prisma.tenant.delete({ where: { id: tenantId } });
     });
 
-    // 5. Create Product
-    product = await prisma.product.create({
-      data: {
-        ...testProductData,
-        tenantId: tenant.id,
-      },
+    describe('POST /api/v1/inventory/adjustments', () => {
+        test('should create a stock adjustment (increase)', async () => {
+            const adjustmentDto = {
+                locationId: sourceLocationId,
+                reasonCode: 'INITIAL_STOCK',
+                items: [
+                    {
+                        productId: productId,
+                        quantityChange: 100,
+                    },
+                ],
+            };
+
+            const res = await request(app)
+                .post('/api/v1/inventory/adjustments')
+                .set('Authorization', `Bearer ${adminAccessToken}`)
+                .send(adjustmentDto);
+
+            expect(res.status).toBe(httpStatus.CREATED);
+            expect(res.body).toHaveProperty('adjustmentId');
+            // The service returns { adjustmentId: ..., transactionIds: ... }
+        });
     });
 
-    // 6. Create Inventory Item
-    inventoryItem = await prisma.inventoryItem.create({
-      data: {
-        tenantId: tenant.id,
-        productId: product.id,
-        locationId: location.id,
-        quantityOnHand: 100,
-        quantityAllocated: 10,
-        quantityIncoming: 5,
-        // averageCost: 9.50, // Example value if needed
-      },
-    });
-  });
+    describe('GET /api/v1/inventory/items', () => {
+        test('should return inventory items with correct quantity', async () => {
+            const res = await request(app)
+                .get('/api/v1/inventory/items')
+                .query({ locationId: sourceLocationId, productId: productId })
+                .set('Authorization', `Bearer ${adminAccessToken}`);
 
-  afterAll(async () => {
-    // Clean up in reverse order of creation to avoid foreign key constraints
-    await prisma.inventoryItem.deleteMany({ where: { tenantId: tenant.id } });
-    await prisma.product.deleteMany({ where: { tenantId: tenant.id } });
-    await prisma.location.deleteMany({ where: { tenantId: tenant.id } });
-    await prisma.user.deleteMany({ where: { tenantId: tenant.id } });
-    await prisma.tenant.delete({ where: { id: tenant.id } });
-    await prisma.$disconnect();
-  });
-
-  describe('GET /api/v1/inventory/items', () => {
-    it('should return a list of inventory items including product basePrice', async () => {
-      const response = await request(app)
-        .get('/api/v1/inventory/items')
-        .set('Authorization', `Bearer ${token}`)
-        .set('X-Tenant-ID', tenant.id) // Assuming tenant ID is passed in a header
-        .query({ page: 1, limit: 10 }); // Add pagination params if required by endpoint
-
-      expect(response.status).toBe(200);
-      expect(response.body).toHaveProperty('items');
-      expect(Array.isArray(response.body.items)).toBe(true);
-      expect(response.body.items.length).toBeGreaterThanOrEqual(1);
-
-      const foundItem = response.body.items.find(
-        (item: any) => item.id === inventoryItem.id
-      );
-
-      expect(foundItem).toBeDefined();
-      expect(foundItem).toHaveProperty('id', inventoryItem.id);
-      expect(foundItem).toHaveProperty('quantityOnHand'); // Check for Decimal by its string representation
-      // Note: Prisma Decimal fields are often returned as strings in JSON to preserve precision.
-      // Adjust assertion if your setup serializes them as numbers.
-      expect(foundItem.quantityOnHand.toString()).toBe(inventoryItem.quantityOnHand.toString());
-
-
-      expect(foundItem).toHaveProperty('product');
-      expect(foundItem.product).toHaveProperty('id', product.id);
-      expect(foundItem.product).toHaveProperty('sku', product.sku);
-      expect(foundItem.product).toHaveProperty('name', product.name);
-      // Critical Assertion: Check for basePrice
-      expect(foundItem.product).toHaveProperty('basePrice');
-      expect(foundItem.product.basePrice.toString()).toBe(product.basePrice.toString());
-
-
-      expect(foundItem).toHaveProperty('location');
-      expect(foundItem.location).toHaveProperty('id', location.id);
-      expect(foundItem.location).toHaveProperty('name', location.name);
+            expect(res.status).toBe(httpStatus.OK);
+            expect(res.body.results.length).toBeGreaterThanOrEqual(1);
+            const item = res.body.results.find((i: any) => i.productId === productId && i.locationId === sourceLocationId);
+            expect(item).toBeDefined();
+            expect(Number(item.quantityOnHand)).toBe(100);
+        });
     });
 
-    it('should return 401 if no token is provided', async () => {
-        const response = await request(app)
-            .get('/api/v1/inventory/items')
-            .set('X-Tenant-ID', tenant.id);
+    describe('POST /api/v1/inventory/transfers', () => {
+        test('should create an inventory transfer', async () => {
+            const transferDto = {
+                sourceLocationId: sourceLocationId,
+                destinationLocationId: destinationLocationId,
+                notes: 'Test Transfer',
+                items: [
+                    {
+                        productId: productId,
+                        quantityRequested: 10,
+                    },
+                ],
+            };
 
-        expect(response.status).toBe(401);
+            const res = await request(app)
+                .post('/api/v1/inventory/transfers')
+                .set('Authorization', `Bearer ${adminAccessToken}`)
+                .send(transferDto);
+
+            expect(res.status).toBe(httpStatus.CREATED);
+            expect(res.body).toHaveProperty('transferId');
+            // The service returns { transferId: ... }, not the full object
+        });
     });
 
-    it('should return 400 or 404 if tenant ID is missing or invalid (depending on middleware)', async () => {
-        // This test's expected status might vary based on how tenant validation is implemented.
-        // It could be 400 (Bad Request) or 404 (Not Found) or even 500 if not handled gracefully.
-        const response = await request(app)
-            .get('/api/v1/inventory/items')
-            .set('Authorization', `Bearer ${token}`);
-            // No X-Tenant-ID header
+    describe('GET /api/v1/inventory/transfers', () => {
+        test('should return list of transfers', async () => {
+            const res = await request(app)
+                .get('/api/v1/inventory/transfers')
+                .set('Authorization', `Bearer ${adminAccessToken}`);
 
-        // Common outcomes are 400 or 401/403 if tenant middleware runs after auth
-        expect([400, 401, 403, 404]).toContain(response.status);
+            expect(res.status).toBe(httpStatus.OK);
+            expect(res.body.results.length).toBeGreaterThanOrEqual(1);
+        });
     });
-  });
 });

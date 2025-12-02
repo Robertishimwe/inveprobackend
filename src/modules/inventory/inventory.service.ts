@@ -11,7 +11,7 @@ import {
   InventoryTransferItem,
   InventoryAdjustment,
   InventoryAdjustmentItem,
-//   PasswordResetToken, // Added PasswordResetToken just in case it was used elsewhere (check context)
+  //   PasswordResetToken, // Added PasswordResetToken just in case it was used elsewhere (check context)
 } from "@prisma/client"; // Ensure all necessary Prisma types are imported
 import httpStatus from "http-status";
 import { prisma } from "@/config";
@@ -179,7 +179,7 @@ const createAdjustment = async (
   data: CreateAdjustmentDto,
   tenantId: string,
   userId: string
-): Promise<{ adjustmentId: string; transactionIds: bigint[] }> => {
+): Promise<{ adjustmentId: string; transactionIds: string[] }> => {
   const logContext: LogContext = {
     function: "createAdjustment",
     tenantId,
@@ -293,7 +293,7 @@ const createAdjustment = async (
     );
 
     logger.info(`Inventory adjustment created successfully`, logContext);
-    return { adjustmentId: adjustment.id, transactionIds };
+    return { adjustmentId: adjustment.id, transactionIds: transactionIds.map(id => id.toString()) };
   } catch (error: any) {
     if (error instanceof ApiError) throw error; // Re-throw known validation/logic errors
     logContext.error = error;
@@ -739,10 +739,10 @@ const getAdjustmentById = async (
   tenantId: string
 ): Promise<
   | (InventoryAdjustment & {
-      items: (InventoryAdjustmentItem & {
-        product: Pick<Product, "id" | "sku" | "name">;
-      })[];
-    })
+    items: (InventoryAdjustmentItem & {
+      product: Pick<Product, "id" | "sku" | "name">;
+    })[];
+  })
   | null
 > => {
   const logContext: LogContext = {
@@ -847,10 +847,10 @@ const getTransferById = async (
   tenantId: string
 ): Promise<
   | (InventoryTransfer & {
-      items: (InventoryTransferItem & {
-        product: Pick<Product, "id" | "sku" | "name">;
-      })[];
-    })
+    items: (InventoryTransferItem & {
+      product: Pick<Product, "id" | "sku" | "name">;
+    })[];
+  })
   | null
 > => {
   const logContext: LogContext = {
@@ -964,9 +964,9 @@ const getInventoryItemById = async (
   tenantId: string
 ): Promise<
   | (InventoryItem & {
-      product: Pick<Product, "id" | "sku" | "name">;
-      location: Pick<Location, "id" | "name">;
-    })
+    product: Pick<Product, "id" | "sku" | "name">;
+    location: Pick<Location, "id" | "name">;
+  })
   | null
 > => {
   const logContext: LogContext = {

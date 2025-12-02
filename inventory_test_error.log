@@ -1,0 +1,4 @@
+{
+  "code": 500,
+  "message": "Do not know how to serialize a BigInt"
+}

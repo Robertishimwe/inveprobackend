@@ -19,7 +19,7 @@ import { orderService } from '@/modules/orders/order.service';
 // import { inventoryService } from '@/modules/inventory/inventory.service';
 
 
-type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; sessionId?: string | null; terminalId?: string | null; locationId?: string | null; error?: any; [key: string]: any; };
+type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; sessionId?: string | null; terminalId?: string | null; locationId?: string | null; error?: any;[key: string]: any; };
 
 // --- Session Management ---
 
@@ -83,7 +83,7 @@ const startSession = async (data: StartSessionDto, userId: string, posTerminalId
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error starting POS session`, logContext);
-         // --- FIX: Throw from catch ---
+        // --- FIX: Throw from catch ---
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to start session.');
         // ---------------------------
     }
@@ -170,6 +170,10 @@ const endSession = async (sessionId: string, data: EndSessionDto, userId: string
 
             // --- FIX: Use explicit comparisons or switch statement ---
             transactions.forEach(t => {
+                // Skip the starting float transaction if we are already starting with session.startingCash
+                if (t.transactionType === PosTransactionType.PAY_IN && t.notes === 'Starting float') {
+                    return;
+                }
                 switch (t.transactionType) {
                     case PosTransactionType.PAY_IN:
                     case PosTransactionType.CASH_SALE:
@@ -216,7 +220,7 @@ const endSession = async (sessionId: string, data: EndSessionDto, userId: string
 
         logger.info(`POS session ended successfully`, logContext);
         if (endedSession.difference && !endedSession.difference.isZero()) {
-             logger.warn(`POS session ended with cash difference: ${endedSession.difference}`, logContext);
+            logger.warn(`POS session ended with cash difference: ${endedSession.difference}`, logContext);
         }
         return endedSession;
 
@@ -229,13 +233,13 @@ const endSession = async (sessionId: string, data: EndSessionDto, userId: string
 };
 /** Reconcile a CLOSED POS Session */
 const reconcileSession = async (sessionId: string, tenantId: string): Promise<PosSession> => {
-     const logContext: LogContext = { function: 'reconcileSession', sessionId, tenantId };
-      const session = await prisma.posSession.findFirst({
-          where: { id: sessionId, tenantId, status: PosSessionStatus.CLOSED }
-      });
-      if (!session) throw new ApiError(httpStatus.NOT_FOUND, 'Closed session not found for reconciliation.');
+    const logContext: LogContext = { function: 'reconcileSession', sessionId, tenantId };
+    const session = await prisma.posSession.findFirst({
+        where: { id: sessionId, tenantId, status: PosSessionStatus.CLOSED }
+    });
+    if (!session) throw new ApiError(httpStatus.NOT_FOUND, 'Closed session not found for reconciliation.');
 
-      try {
+    try {
         const reconciledSession = await prisma.posSession.update({
             where: { id: sessionId },
             data: { status: PosSessionStatus.RECONCILED }
@@ -247,41 +251,41 @@ const reconcileSession = async (sessionId: string, tenantId: string): Promise<Po
         logger.error(`Error reconciling POS session`, logContext);
         // --- FIX: Throw from catch ---
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             throw new ApiError(httpStatus.NOT_FOUND, 'Session not found during reconciliation update attempt.');
+            throw new ApiError(httpStatus.NOT_FOUND, 'Session not found during reconciliation update attempt.');
         }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to reconcile session.');
-         // ---------------------------
+        // ---------------------------
     }
 };
 
 /** Record Cash Pay In/Out */
 const recordCashTransaction = async (sessionId: string, data: CashTransactionDto, userId: string, tenantId: string): Promise<PosSessionTransaction> => {
     const logContext: LogContext = { function: 'recordCashTransaction', sessionId, userId, tenantId, type: data.transactionType, amount: data.amount };
-      const session = await prisma.posSession.findFirst({
-          where: { id: sessionId, tenantId, userId, status: PosSessionStatus.OPEN },
-          select: { id: true }
-      });
-      if (!session) throw new ApiError(httpStatus.BAD_REQUEST, 'Active session not found for this user to record cash transaction.');
+    const session = await prisma.posSession.findFirst({
+        where: { id: sessionId, tenantId, userId, status: PosSessionStatus.OPEN },
+        select: { id: true }
+    });
+    if (!session) throw new ApiError(httpStatus.BAD_REQUEST, 'Active session not found for this user to record cash transaction.');
 
-      try {
-         const amountDecimal = new Prisma.Decimal(data.amount);
-         const cashTx = await prisma.posSessionTransaction.create({
-             data: {
-                 tenantId, posSessionId: sessionId,
-                 transactionType: data.transactionType, // PAY_IN or PAY_OUT
-                 amount: amountDecimal,
-                 notes: data.notes,
-             }
-         });
-         logger.info(`Cash transaction recorded successfully`, logContext);
-         return cashTx;
-     } catch (error: any) {
-         logContext.error = error;
-         logger.error(`Error recording cash transaction`, logContext);
-         // --- FIX: Throw from catch ---
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to record cash transaction.');
-         // ---------------------------
-     }
+    try {
+        const amountDecimal = new Prisma.Decimal(data.amount);
+        const cashTx = await prisma.posSessionTransaction.create({
+            data: {
+                tenantId, posSessionId: sessionId,
+                transactionType: data.transactionType, // PAY_IN or PAY_OUT
+                amount: amountDecimal,
+                notes: data.notes,
+            }
+        });
+        logger.info(`Cash transaction recorded successfully`, logContext);
+        return cashTx;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error recording cash transaction`, logContext);
+        // --- FIX: Throw from catch ---
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to record cash transaction.');
+        // ---------------------------
+    }
 };
 
 // --- Checkout Process ---
@@ -811,7 +815,7 @@ const processPosCheckout = async (
 
     // 3. Basic Payment Validation (Total amount check)
     if (!checkoutData.payments || checkoutData.payments.length === 0) {
-         throw new ApiError(httpStatus.BAD_REQUEST, 'At least one payment method is required for checkout.');
+        throw new ApiError(httpStatus.BAD_REQUEST, 'At least one payment method is required for checkout.');
     }
     // Calculate total payment amount provided using Prisma.Decimal for precision
     let totalPaymentAmountDecimal = new Prisma.Decimal(0);
@@ -829,7 +833,7 @@ const processPosCheckout = async (
     logContext.totalPaymentProvided = totalPaymentAmountDecimal.toNumber(); // Log total payment
 
 
-        const totalPaymentAmount = checkoutData.payments.reduce((sum, p) => sum + p.amount, 0);
+    const totalPaymentAmount = checkoutData.payments.reduce((sum, p) => sum + p.amount, 0);
     if (totalPaymentAmount <= 0) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Total payment amount must be positive.');
     }
@@ -841,7 +845,7 @@ const processPosCheckout = async (
         const createdOrder = await prisma.$transaction(async (tx) => {
 
             // Optional: Re-fetch session within transaction for locking if needed
-            const session = await tx.posSession.findFirst({ where: { id: sessionId, status: PosSessionStatus.OPEN }, select: { id: true }});
+            const session = await tx.posSession.findFirst({ where: { id: sessionId, status: PosSessionStatus.OPEN }, select: { id: true } });
             if (!session) throw new Error("Session closed unexpectedly during transaction."); // Internal error state
 
             // 4. Prepare Order Items, Apply Item Discounts, Check Stock, Calculate Totals
@@ -858,7 +862,7 @@ const processPosCheckout = async (
                 if (!product) throw new Error(`Consistency Error: Product ${itemDto.productId} not found during transaction.`);
 
                 const requestedQuantity = new Prisma.Decimal(itemDto.quantity);
-                if(requestedQuantity.lessThanOrEqualTo(0)) {
+                if (requestedQuantity.lessThanOrEqualTo(0)) {
                     // This validation should ideally happen in DTO, but double-check
                     throw new ApiError(httpStatus.BAD_REQUEST, `Quantity for product ${product.sku} must be positive.`);
                 }
@@ -912,11 +916,11 @@ const processPosCheckout = async (
                     if (availableQuantity.lessThan(requestedQuantity)) {
                         const allowBackorder = false; // TODO: Get from config
                         if (!allowBackorder) {
-                             throw new ApiError(httpStatus.BAD_REQUEST, `Insufficient stock for product ${product.sku}. Available: ${availableQuantity}, Requested: ${requestedQuantity}`);
+                            throw new ApiError(httpStatus.BAD_REQUEST, `Insufficient stock for product ${product.sku}. Available: ${availableQuantity}, Requested: ${requestedQuantity}`);
                         } else {
-                             logContext.backorderedProduct = product.sku;
-                             logger.warn(`Product ${product.sku} is backordered`, logContext);
-                             needsBackorder = true;
+                            logContext.backorderedProduct = product.sku;
+                            logger.warn(`Product ${product.sku} is backordered`, logContext);
+                            needsBackorder = true;
                         }
                     }
                     // Add to list of movements needed AFTER order creation
@@ -933,10 +937,10 @@ const processPosCheckout = async (
             // 5. Apply Cart-Level Discount & Calculate Final Order Total
             let cartDiscountValue = new Prisma.Decimal(0);
             if (checkoutData.cartDiscountAmount && checkoutData.cartDiscountAmount > 0) {
-                 cartDiscountValue = new Prisma.Decimal(checkoutData.cartDiscountAmount);
+                cartDiscountValue = new Prisma.Decimal(checkoutData.cartDiscountAmount);
             } else if (checkoutData.cartDiscountPercent && checkoutData.cartDiscountPercent > 0) {
-                 const percent = Math.min(checkoutData.cartDiscountPercent, 1);
-                 cartDiscountValue = calculatedSubtotal.times(percent);
+                const percent = Math.min(checkoutData.cartDiscountPercent, 1);
+                cartDiscountValue = calculatedSubtotal.times(percent);
             }
             cartDiscountValue = Prisma.Decimal.min(cartDiscountValue, calculatedSubtotal); // Cap discount
 
@@ -950,7 +954,7 @@ const processPosCheckout = async (
 
             // 6. Validate Payment Total against Final Calculated Order Total
             if (!paymentTotalDecimal.equals(calculatedTotal)) {
-                logger.error(`Payment total mismatch`, {...logContext, paymentTotal: paymentTotalDecimal.toNumber()});
+                logger.error(`Payment total mismatch`, { ...logContext, paymentTotal: paymentTotalDecimal.toNumber() });
                 throw new ApiError(httpStatus.BAD_REQUEST, `Payment total (${paymentTotalDecimal}) does not match final order total (${calculatedTotal}). Verify cart, discounts, and payment amounts.`);
             }
 
@@ -987,26 +991,26 @@ const processPosCheckout = async (
                     }
                 },
                 // Include items to get their generated IDs for linking inventory transactions
-                include: { items: { select: { id: true, productId: true, lotNumber: true, serialNumber: true }}}
+                include: { items: { select: { id: true, productId: true, lotNumber: true, serialNumber: true } } }
             });
             logContext.orderId = order.id; logContext.orderNumber = order.orderNumber;
 
             // 9. Log CASH payment(s) to POS Session Transaction log
             const cashPayments = checkoutData.payments.filter(p => p.paymentMethod === PaymentMethod.CASH);
             for (const cashPayment of cashPayments) {
-                 await tx.posSessionTransaction.create({
-                     data: {
-                         tenantId, posSessionId: sessionId,
-                         transactionType: PosTransactionType.CASH_SALE,
-                         amount: new Prisma.Decimal(cashPayment.amount), // Amount paid
-                         relatedOrderId: order.id,
-                         notes: `Cash payment for Order ${order.orderNumber}`
-                     }
-                 });
+                await tx.posSessionTransaction.create({
+                    data: {
+                        tenantId, posSessionId: sessionId,
+                        transactionType: PosTransactionType.CASH_SALE,
+                        amount: new Prisma.Decimal(cashPayment.amount), // Amount paid
+                        relatedOrderId: order.id,
+                        notes: `Cash payment for Order ${order.orderNumber}`
+                    }
+                });
             }
 
             // 10. Record Stock Movements (Decrease OnHand for tracked items) & Prepare Transaction Logs
-             inventoryTransactionDataBatch = []; // Re-initialize inside transaction scope
+            inventoryTransactionDataBatch = []; // Re-initialize inside transaction scope
             for (const move of stockMovements) {
                 const orderItem = order.items.find(oi => oi.productId === move.productId);
                 if (!orderItem) { throw new Error(`Consistency Error: Cannot find created order item for stock movement: Product ID ${move.productId}`); }
@@ -1016,28 +1020,28 @@ const processPosCheckout = async (
 
                 // Prepare data for the inventory transaction log
                 inventoryTransactionDataBatch.push({
-                     tenantId, productId: move.productId, locationId: locationId,
-                     transactionType: InventoryTransactionType.SALE,
-                     quantityChange: move.quantity.negated(), // Negative for sale
-                     unitCost: null, // COGS calculated later if needed
-                     relatedOrderId: order.id,
-                     relatedOrderItemId: orderItem.id,
-                     notes: `Order ${order.orderNumber}`,
-                     lotNumber: move.lot, // Lot from the order item DTO
-                     serialNumber: move.serial, // Serial from the order item DTO
-                     userId: userId,
-                     expiryDate: undefined // Add if expiry date is tracked/provided
-                 });
+                    tenantId, productId: move.productId, locationId: locationId,
+                    transactionType: InventoryTransactionType.SALE,
+                    quantityChange: move.quantity.negated(), // Negative for sale
+                    unitCost: null, // COGS calculated later if needed
+                    relatedOrderId: order.id,
+                    relatedOrderItemId: orderItem.id,
+                    notes: `Order ${order.orderNumber}`,
+                    lotNumber: move.lot, // Lot from the order item DTO
+                    serialNumber: move.serial, // Serial from the order item DTO
+                    userId: userId,
+                    expiryDate: undefined // Add if expiry date is tracked/provided
+                });
             }
             // Batch create transaction logs
             if (inventoryTransactionDataBatch.length > 0) {
-                 await tx.inventoryTransaction.createMany({ data: inventoryTransactionDataBatch });
-                 logContext.transactionsCreated = inventoryTransactionDataBatch.length;
-                 logger.debug(`Batch created ${inventoryTransactionDataBatch.length} inventory transactions for order ${order.orderNumber}.`, logContext);
+                await tx.inventoryTransaction.createMany({ data: inventoryTransactionDataBatch });
+                logContext.transactionsCreated = inventoryTransactionDataBatch.length;
+                logger.debug(`Batch created ${inventoryTransactionDataBatch.length} inventory transactions for order ${order.orderNumber}.`, logContext);
             }
 
             // 11. Fetch the final order with all details needed for the response
-             const finalOrder = await tx.order.findUniqueOrThrow({
+            const finalOrder = await tx.order.findUniqueOrThrow({
                 where: { id: order.id },
                 include: { // Ensure this matches OrderWithDetails type
                     customer: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -1047,7 +1051,7 @@ const processPosCheckout = async (
                     payments: true,
                     initiatedReturns: { where: { originalOrderId: order.id } }
                 }
-             });
+            });
 
             return finalOrder; // Return the fully created and fetched order
         }, {
@@ -1075,7 +1079,7 @@ const processPosCheckout = async (
         logger.error(`Error during POS checkout transaction`, logContext);
         // Check for specific Prisma transaction errors
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
-             throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Checkout process timed out due to high load. Please try again.');
+            throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Checkout process timed out due to high load. Please try again.');
         }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Checkout failed: ${error.message || 'Internal Server Error'}`);
     }
@@ -1105,9 +1109,9 @@ const getSessionById = async (sessionId: string, tenantId: string): Promise<PosS
         const session = await prisma.posSession.findFirst({
             where: { id: sessionId, tenantId },
             include: {
-                 user: { select: { id: true, firstName: true, lastName: true } },
-                 location: { select: { id: true, name: true } }
-                 // transactions: { orderBy: { timestamp: 'asc' }} // Maybe add pagination later
+                user: { select: { id: true, firstName: true, lastName: true } },
+                location: { select: { id: true, name: true } }
+                // transactions: { orderBy: { timestamp: 'asc' }} // Maybe add pagination later
             }
         });
         if (!session) { logger.warn(`POS Session not found or tenant mismatch`, logContext); return null; }
@@ -1124,31 +1128,31 @@ const getSessionById = async (sessionId: string, tenantId: string): Promise<PosS
 
 /** Query POS Sessions */
 const querySessions = async (filter: Prisma.PosSessionWhereInput, orderBy: Prisma.PosSessionOrderByWithRelationInput[], limit: number, page: number): Promise<{ sessions: PosSession[], totalResults: number }> => {
-     const skip = (page - 1) * limit;
-     const tenantIdForLog: string | undefined = typeof filter.tenantId === 'string' ? filter.tenantId : undefined;
-     const logContext: LogContext = { function: 'querySessions', tenantId: tenantIdForLog, limit, page };
-     if (!tenantIdForLog) { throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Tenant context missing.'); }
-     try {
-         const [sessions, totalResults] = await prisma.$transaction([
-             prisma.posSession.findMany({
-                 where: filter,
-                 include: {
-                     user: { select: { id: true, firstName: true, lastName: true } },
-                     location: { select: { id: true, name: true } }
-                 },
-                 orderBy, skip, take: limit,
-             }),
-             prisma.posSession.count({ where: filter }),
-         ]);
-         logger.debug(`POS Session query successful, found ${sessions.length} of ${totalResults}`, logContext);
-         return { sessions, totalResults };
-     } catch (error: any) {
-         logContext.error = error;
-         logger.error(`Error querying POS sessions`, logContext);
-         // --- FIX: Throw from catch ---
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve sessions.');
-         // ---------------------------
-     }
+    const skip = (page - 1) * limit;
+    const tenantIdForLog: string | undefined = typeof filter.tenantId === 'string' ? filter.tenantId : undefined;
+    const logContext: LogContext = { function: 'querySessions', tenantId: tenantIdForLog, limit, page };
+    if (!tenantIdForLog) { throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Tenant context missing.'); }
+    try {
+        const [sessions, totalResults] = await prisma.$transaction([
+            prisma.posSession.findMany({
+                where: filter,
+                include: {
+                    user: { select: { id: true, firstName: true, lastName: true } },
+                    location: { select: { id: true, name: true } }
+                },
+                orderBy, skip, take: limit,
+            }),
+            prisma.posSession.count({ where: filter }),
+        ]);
+        logger.debug(`POS Session query successful, found ${sessions.length} of ${totalResults}`, logContext);
+        return { sessions, totalResults };
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error querying POS sessions`, logContext);
+        // --- FIX: Throw from catch ---
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve sessions.');
+        // ---------------------------
+    }
 };
 
 

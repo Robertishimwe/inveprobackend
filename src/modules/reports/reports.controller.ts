@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import httpStatus from 'http-status';
 import { reportingService } from './reports.service'; // Assuming reportingService has all needed methods
+import * as extendedReportingService from './reports.service.extended'; // Extended implementations
 import catchAsync from '@/utils/catchAsync';
 import ApiError from '@/utils/ApiError';
 import pick from '@/utils/pick'; // Utility for filtering/pagination query params
@@ -12,71 +13,71 @@ import logger from '@/utils/logger';
 // --- FIX DTO Definition (Move to dto/report-query.dto.ts) ---
 // Ensure ReportQueryDto includes all picked fields as optional
 export class ReportQueryDto {
-    startDate?: string;
-    endDate?: string;
-    locationId?: string;
-    productId?: string;
-    categoryId?: string;
-    customerId?: string;
-    userId?: string; // For staff/user filters
-    page?: number;
-    limit?: number;
-    sortBy?: string;
-    period?: string;
-    supplierId?: string; // <<< Added
-    status?: string;     // <<< Added (use string for flexibility, validate in controller)
-    poNumber?: string;   // <<< Added
-    orderNumber?: string;// <<< Added
-    returnNumber?: string;// <<< Added
-    quantityLte?: string;// <<< Added (example, keep as string for parsing)
-    quantityGte?: string;// <<< Added (example, keep as string for parsing)
+     startDate?: string;
+     endDate?: string;
+     locationId?: string;
+     productId?: string;
+     categoryId?: string;
+     customerId?: string;
+     userId?: string; // For staff/user filters
+     page?: number;
+     limit?: number;
+     sortBy?: string;
+     period?: string;
+     supplierId?: string; // <<< Added
+     status?: string;     // <<< Added (use string for flexibility, validate in controller)
+     poNumber?: string;   // <<< Added
+     orderNumber?: string;// <<< Added
+     returnNumber?: string;// <<< Added
+     quantityLte?: string;// <<< Added (example, keep as string for parsing)
+     quantityGte?: string;// <<< Added (example, keep as string for parsing)
 }
 // --- End DTO Definition ---
 
 
 // Helper function to parse and validate common report query parameters
 const parseAndValidateReportQuery = (req: Request): ReportQueryDto => {
-    // Pick allowed query parameters
-    const query = pick(req.query, [
-        'startDate', 'endDate', 'locationId', 'productId', 'categoryId',
-        'customerId', 'userId', 'page', 'limit', 'sortBy', 'period',
-        'supplierId', 'status', 'poNumber', 'orderNumber', 'returnNumber',
-        'quantityLte', 'quantityGte' // Include all picked fields
-    ]);
+     // Pick allowed query parameters
+     const query = pick(req.query, [
+          'startDate', 'endDate', 'locationId', 'productId', 'categoryId',
+          'customerId', 'userId', 'page', 'limit', 'sortBy', 'period',
+          'supplierId', 'status', 'poNumber', 'orderNumber', 'returnNumber',
+          'quantityLte', 'quantityGte' // Include all picked fields
+     ]);
 
-    // Basic type coercion and default values
-    // --- FIX: Handle potential undefined before validation ---
-    const pageParam = query.page ? parseInt(query.page as string, 10) : 1;
-    const limitParam = query.limit ? parseInt(query.limit as string, 10) : 50;
+     // Basic type coercion and default values
+     // --- FIX: Handle potential undefined before validation ---
+     const pageParam = query.page ? parseInt(query.page as string, 10) : 1;
+     const limitParam = query.limit ? parseInt(query.limit as string, 10) : 50;
 
-    const parsed: ReportQueryDto = {
-        startDate: query.startDate as string | undefined,
-        endDate: query.endDate as string | undefined,
-        locationId: query.locationId as string | undefined,
-        productId: query.productId as string | undefined,
-        categoryId: query.categoryId as string | undefined,
-        customerId: query.customerId as string | undefined,
-        userId: query.userId as string | undefined,
-        sortBy: query.sortBy as string | undefined,
-        period: query.period as string | undefined ?? 'today', // Default period
-        supplierId: query.supplierId as string | undefined, // <<< Added assignment
-        status: query.status as string | undefined,
-        poNumber: query.poNumber as string | undefined,
-        orderNumber: query.orderNumber as string | undefined,
-        returnNumber: query.returnNumber as string | undefined,
-        quantityLte: query.quantityLte as string | undefined,
-        quantityGte: query.quantityGte as string | undefined,
-        // Assign validated page and limit
-        page: !isNaN(pageParam) && pageParam >= 1 ? pageParam : 1,
-        limit: !isNaN(limitParam) && limitParam >= 1 && limitParam <= 1000 ? limitParam : 50, // Cap limit
-    };
-    // --- End FIX ---
+     const parsed: ReportQueryDto = {
+          startDate: query.startDate as string | undefined,
+          endDate: query.endDate as string | undefined,
+          locationId: query.locationId as string | undefined,
+          productId: query.productId as string | undefined,
+          categoryId: query.categoryId as string | undefined,
+          customerId: query.customerId as string | undefined,
+          userId: query.userId as string | undefined,
+          sortBy: query.sortBy as string | undefined,
+          period: query.period as string | undefined ?? 'today', // Default period
+          supplierId: query.supplierId as string | undefined, // <<< Added assignment
+          status: query.status as string | undefined,
+          poNumber: query.poNumber as string | undefined,
+          orderNumber: query.orderNumber as string | undefined,
+          returnNumber: query.returnNumber as string | undefined,
+          quantityLte: query.quantityLte as string | undefined,
+          quantityGte: query.quantityGte as string | undefined,
+          // Assign validated page and limit
+          page: !isNaN(pageParam) && pageParam >= 1 ? pageParam : 1,
+          limit: !isNaN(limitParam) && limitParam >= 1 && limitParam <= 1000 ? limitParam : 50, // Cap limit
+     };
+     // --- End FIX ---
 
-    // Note: More specific validation (UUID format, Date format, Enum values)
-    // should ideally be handled by class-validator with a DTO passed to validateRequest middleware.
-    // This helper provides basic parsing and defaults.
+     // Note: More specific validation (UUID format, Date format, Enum values)
+     // should ideally be handled by class-validator with a DTO passed to validateRequest middleware.
+     // This helper provides basic parsing and defaults.
 
-    return parsed;
+     return parsed;
 };
 
 
@@ -84,65 +85,50 @@ const parseAndValidateReportQuery = (req: Request): ReportQueryDto => {
 
 /** Controller for Dashboard KPIs */
 const getDashboardKpis = catchAsync(async (req: Request, res: Response) => {
-    const tenantId = getTenantIdFromRequest(req);
-    // Only pick relevant params for this specific KPI endpoint
-    const queryParams = pick(req.query, ['period', 'locationId']) as Pick<ReportQueryDto, 'period' | 'locationId'>;
-    const kpiData = await reportingService.getDashboardKpis(tenantId, queryParams);
-    res.status(httpStatus.OK).send(kpiData);
+     const tenantId = getTenantIdFromRequest(req);
+     // Only pick relevant params for this specific KPI endpoint
+     const queryParams = pick(req.query, ['period', 'locationId']) as Pick<ReportQueryDto, 'period' | 'locationId'>;
+     const kpiData = await reportingService.getDashboardKpis(tenantId, queryParams);
+     res.status(httpStatus.OK).send(kpiData);
 });
 
 // --- Sales Reports ---
 
 /** Controller for Sales Summary */
 const getSalesSummary = catchAsync(async (req: Request, res: Response) => {
-    const tenantId = getTenantIdFromRequest(req);
-    const queryParams = parseAndValidateReportQuery(req);
-    const summaryData = await reportingService.getSalesSummary(tenantId, {
-        startDate: queryParams.startDate,
-        endDate: queryParams.endDate,
-        locationId: queryParams.locationId,
-        userId: queryParams.userId, // Filter by staff member
-    });
-    res.status(httpStatus.OK).send(summaryData);
+     const tenantId = getTenantIdFromRequest(req);
+     const queryParams = parseAndValidateReportQuery(req);
+     const summaryData = await reportingService.getSalesSummary(tenantId, {
+          startDate: queryParams.startDate,
+          endDate: queryParams.endDate,
+          locationId: queryParams.locationId,
+          userId: queryParams.userId, // Filter by staff member
+     });
+     res.status(httpStatus.OK).send(summaryData);
 });
 
 /** Controller for Sales By Product */
 const getSalesByProduct = catchAsync(async (req: Request, res: Response) => {
-    // --- FIX: Use tenantId and queryParams ---
-    const tenantId = getTenantIdFromRequest(req);
-    const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getSalesByProduct service function not implemented yet.", { tenantId, queryParams });
-    // TODO: Implement reportingService.getSalesByProduct(tenantId, queryParams);
-    // const data = await reportingService.getSalesByProduct(tenantId, queryParams);
-    // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Sales by Product report not implemented yet." });
-    // --- End FIX ---
+     const tenantId = getTenantIdFromRequest(req);
+     const queryParams = parseAndValidateReportQuery(req);
+     const data = await extendedReportingService.getSalesByProduct(tenantId, queryParams);
+     res.status(httpStatus.OK).send(data);
 });
 
 /** Controller for Sales By Category */
 const getSalesByCategory = catchAsync(async (req: Request, res: Response) => {
-    // --- FIX: Use tenantId and queryParams ---
-    const tenantId = getTenantIdFromRequest(req);
-    const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getSalesByCategory service function not implemented yet.", { tenantId, queryParams });
-    // TODO: Implement reportingService.getSalesByCategory(tenantId, queryParams);
-    // const data = await reportingService.getSalesByCategory(tenantId, queryParams);
-    // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Sales by Category report not implemented yet." });
-    // --- End FIX ---
+     const tenantId = getTenantIdFromRequest(req);
+     const queryParams = parseAndValidateReportQuery(req);
+     const data = await extendedReportingService.getSalesByCategory(tenantId, queryParams);
+     res.status(httpStatus.OK).send(data);
 });
 
 /** Controller for Sales By Location */
 const getSalesByLocation = catchAsync(async (req: Request, res: Response) => {
-     // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getSalesByLocation service function not implemented yet.", { tenantId, queryParams });
-     // TODO: Implement reportingService.getSalesByLocation(tenantId, queryParams);
-     // const data = await reportingService.getSalesByLocation(tenantId, queryParams);
-     // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Sales by Location report not implemented yet." });
-     // --- End FIX ---
+     const data = await extendedReportingService.getSalesByLocation(tenantId, queryParams);
+     res.status(httpStatus.OK).send(data);
 });
 
 /** Controller for Sales By Staff */
@@ -150,25 +136,20 @@ const getSalesByStaff = catchAsync(async (req: Request, res: Response) => {
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getSalesByStaff service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getSalesByStaff service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.getSalesByStaff(tenantId, queryParams);
      // const data = await reportingService.getSalesByStaff(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Sales by Staff report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Sales by Staff report not implemented yet." });
      // --- End FIX ---
 });
 
 /** Controller for Payment Methods Summary */
 const getPaymentMethodsSummary = catchAsync(async (req: Request, res: Response) => {
-     // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getPaymentMethodsSummary service function not implemented yet.", { tenantId, queryParams });
-     // TODO: Implement reportingService.getPaymentMethodsSummary(tenantId, queryParams);
-     // const data = await reportingService.getPaymentMethodsSummary(tenantId, queryParams);
-     // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Payment Methods Summary report not implemented yet." });
-     // --- End FIX ---
+     const data = await extendedReportingService.getPaymentMethodsSummary(tenantId, queryParams);
+     res.status(httpStatus.OK).send(data);
 });
 
 /** Controller for Tax Summary */
@@ -176,11 +157,11 @@ const getTaxSummary = catchAsync(async (req: Request, res: Response) => {
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getTaxSummary service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getTaxSummary service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.getTaxSummary(tenantId, queryParams);
      // const data = await reportingService.getTaxSummary(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Tax Summary report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Tax Summary report not implemented yet." });
      // --- End FIX ---
 });
 
@@ -189,44 +170,34 @@ const getTaxSummary = catchAsync(async (req: Request, res: Response) => {
 
 /** Controller for Inventory On Hand */
 const getInventoryOnHand = catchAsync(async (req: Request, res: Response) => {
-    const tenantId = getTenantIdFromRequest(req);
-    const queryParams = parseAndValidateReportQuery(req);
-    // Pass only relevant params to service
-    const inventoryData = await reportingService.getInventoryOnHand(tenantId, {
-        locationId: queryParams.locationId,
-        productId: queryParams.productId,
-        categoryId: queryParams.categoryId, // Pass categoryId if service handles it
-        // Pass quantity filters if service handles them
-        // quantityLte: queryParams.quantityLte,
-        // quantityGte: queryParams.quantityGte,
-    });
-    res.status(httpStatus.OK).send(inventoryData);
+     const tenantId = getTenantIdFromRequest(req);
+     const queryParams = parseAndValidateReportQuery(req);
+     // Pass only relevant params to service
+     const inventoryData = await reportingService.getInventoryOnHand(tenantId, {
+          locationId: queryParams.locationId,
+          productId: queryParams.productId,
+          categoryId: queryParams.categoryId, // Pass categoryId if service handles it
+          // Pass quantity filters if service handles them
+          // quantityLte: queryParams.quantityLte,
+          // quantityGte: queryParams.quantityGte,
+     });
+     res.status(httpStatus.OK).send(inventoryData);
 });
 
 /** Controller for Inventory Valuation */
 const getInventoryValuation = catchAsync(async (req: Request, res: Response) => {
-     // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getInventoryValuation service function not implemented yet.", { tenantId, queryParams });
-     // TODO: Implement reportingService.getInventoryValuation(tenantId, queryParams);
-     // const data = await reportingService.getInventoryValuation(tenantId, queryParams);
-     // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Inventory Valuation report not implemented yet." });
-     // --- End FIX ---
+     const data = await extendedReportingService.getInventoryValuation(tenantId, queryParams);
+     res.status(httpStatus.OK).send(data);
 });
 
 /** Controller for Low Stock Report */
 const getLowStock = catchAsync(async (req: Request, res: Response) => {
-     // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getLowStock service function not implemented yet.", { tenantId, queryParams });
-     // TODO: Implement reportingService.getLowStock(tenantId, queryParams);
-     // const data = await reportingService.getLowStock(tenantId, queryParams);
-     // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Low Stock report not implemented yet." });
-     // --- End FIX ---
+     const data = await extendedReportingService.getLowStock(tenantId, queryParams);
+     res.status(httpStatus.OK).send(data);
 });
 
 /** Controller for Inventory Movement Ledger */
@@ -234,11 +205,11 @@ const getInventoryMovementLedger = catchAsync(async (req: Request, res: Response
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getInventoryMovementLedger service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getInventoryMovementLedger service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.queryInventoryTransactions(tenantId, queryParams);
      // const data = await reportingService.queryInventoryTransactions(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Inventory Movement Ledger report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Inventory Movement Ledger report not implemented yet." });
      // --- End FIX ---
 });
 
@@ -247,11 +218,11 @@ const getInventoryAdjustmentReport = catchAsync(async (req: Request, res: Respon
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getInventoryAdjustmentReport service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getInventoryAdjustmentReport service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.queryAdjustments(tenantId, queryParams);
      // const data = await reportingService.queryAdjustments(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Inventory Adjustment report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Inventory Adjustment report not implemented yet." });
      // --- End FIX ---
 });
 
@@ -260,11 +231,11 @@ const getInventoryTransferReport = catchAsync(async (req: Request, res: Response
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getInventoryTransferReport service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getInventoryTransferReport service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.queryTransfers(tenantId, queryParams);
      // const data = await reportingService.queryTransfers(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Inventory Transfer report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Inventory Transfer report not implemented yet." });
      // --- End FIX ---
 });
 
@@ -276,11 +247,11 @@ const getPurchaseOrderSummary = catchAsync(async (req: Request, res: Response) =
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getPurchaseOrderSummary service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getPurchaseOrderSummary service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.getPurchaseOrderSummary(tenantId, queryParams);
      // const data = await reportingService.getPurchaseOrderSummary(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Purchase Order Summary report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Purchase Order Summary report not implemented yet." });
      // --- End FIX ---
 });
 
@@ -289,11 +260,11 @@ const getPurchaseOrderDetailReport = catchAsync(async (req: Request, res: Respon
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getPurchaseOrderDetailReport service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getPurchaseOrderDetailReport service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.queryPurchaseOrders(tenantId, queryParams); // Using specific includes maybe?
      // const data = await reportingService.queryPurchaseOrders(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Purchase Order Detail report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Purchase Order Detail report not implemented yet." });
      // --- End FIX ---
 });
 
@@ -305,13 +276,13 @@ const getCustomerPurchaseHistory = catchAsync(async (req: Request, res: Response
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    // Requires customerId in params - use queryParams.customerId
-    if(!queryParams.customerId) throw new ApiError(httpStatus.BAD_REQUEST, 'customerId query parameter is required.');
-    logger.warn("getCustomerPurchaseHistory service function not implemented yet.", { tenantId, queryParams });
+     // Requires customerId in params - use queryParams.customerId
+     if (!queryParams.customerId) throw new ApiError(httpStatus.BAD_REQUEST, 'customerId query parameter is required.');
+     logger.warn("getCustomerPurchaseHistory service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.getCustomerPurchaseHistory(tenantId, queryParams.customerId, queryParams);
      // const data = await reportingService.getCustomerPurchaseHistory(tenantId, queryParams.customerId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Customer Purchase History report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Customer Purchase History report not implemented yet." });
      // --- End FIX ---
 });
 
@@ -320,11 +291,11 @@ const getTopCustomers = catchAsync(async (req: Request, res: Response) => {
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getTopCustomers service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getTopCustomers service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.getTopCustomers(tenantId, queryParams);
      // const data = await reportingService.getTopCustomers(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Top Customers report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "Top Customers report not implemented yet." });
      // --- End FIX ---
 });
 
@@ -336,36 +307,36 @@ const getPosSessionReport = catchAsync(async (req: Request, res: Response) => {
      // --- FIX: Use tenantId and queryParams ---
      const tenantId = getTenantIdFromRequest(req);
      const queryParams = parseAndValidateReportQuery(req);
-    logger.warn("getPosSessionReport service function not implemented yet.", { tenantId, queryParams });
+     logger.warn("getPosSessionReport service function not implemented yet.", { tenantId, queryParams });
      // TODO: Implement reportingService.getPosSessionReport or query sessions directly using filters
      // const data = await reportingService.getPosSessionReport(tenantId, queryParams);
      // res.status(httpStatus.OK).send(data);
-    res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "POS Session report not implemented yet." });
+     res.status(httpStatus.NOT_IMPLEMENTED).send({ message: "POS Session report not implemented yet." });
      // --- End FIX ---
 });
 
 
 // Export all implemented and placeholder controller methods
 export const reportingController = {
-    getDashboardKpis,
-    getSalesSummary,
-    getSalesByProduct,
-    getSalesByCategory,
-    getSalesByLocation,
-    getSalesByStaff,
-    getPaymentMethodsSummary,
-    getTaxSummary,
-    getInventoryOnHand,
-    getInventoryValuation,
-    getLowStock,
-    getInventoryMovementLedger,
-    getInventoryAdjustmentReport,
-    getInventoryTransferReport,
-    getPurchaseOrderSummary,
-    getPurchaseOrderDetailReport,
-    getCustomerPurchaseHistory,
-    getTopCustomers,
-    getPosSessionReport,
+     getDashboardKpis,
+     getSalesSummary,
+     getSalesByProduct,
+     getSalesByCategory,
+     getSalesByLocation,
+     getSalesByStaff,
+     getPaymentMethodsSummary,
+     getTaxSummary,
+     getInventoryOnHand,
+     getInventoryValuation,
+     getLowStock,
+     getInventoryMovementLedger,
+     getInventoryAdjustmentReport,
+     getInventoryTransferReport,
+     getPurchaseOrderSummary,
+     getPurchaseOrderDetailReport,
+     getCustomerPurchaseHistory,
+     getTopCustomers,
+     getPosSessionReport,
 };
 
 
