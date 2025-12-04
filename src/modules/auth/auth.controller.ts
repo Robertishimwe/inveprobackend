@@ -30,7 +30,7 @@ const setRefreshTokenCookie = (res: Response, refreshToken: string) => {
  * Clears the refresh token cookie.
  */
 const clearRefreshTokenCookie = (res: Response) => {
-     const cookieOptions = {
+    const cookieOptions = {
         httpOnly: true,
         secure: env.NODE_ENV === 'production',
         sameSite: 'lax' as const,
@@ -99,14 +99,14 @@ const refreshTokens = catchAsync(async (req: Request, res: Response) => {
  * Handle user logout requests.
  */
 const logout = catchAsync(async (req: Request, res: Response) => {
-     const refreshToken = req.cookies[env.REFRESH_TOKEN_COOKIE_NAME];
+    const refreshToken = req.cookies[env.REFRESH_TOKEN_COOKIE_NAME];
 
-     if (refreshToken) {
+    if (refreshToken) {
         // Instruct service to revoke the token
         await authService.logoutUser(refreshToken);
-     } else {
+    } else {
         logger.info(`Logout request received without a refresh token cookie. IP: ${req.ip}`);
-     }
+    }
 
     // Clear the cookie on the client side regardless
     clearRefreshTokenCookie(res);
@@ -142,11 +142,30 @@ const resetPassword = catchAsync(async (req: Request, res: Response) => {
     res.status(httpStatus.OK).send({ message: 'Password has been reset successfully.' });
 });
 
+/**
+ * Get current authenticated user info.
+ */
+const me = catchAsync(async (req: Request, res: Response) => {
+    // req.user is already attached by authMiddleware with roles and permissions
+    if (!req.user) {
+        throw new ApiError(httpStatus.UNAUTHORIZED, 'User not found');
+    }
+
+    // Explicitly exclude sensitive and unnecessary data
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { passwordHash, createdAt, updatedAt, ...userWithoutSensitiveData } = req.user;
+
+    res.status(httpStatus.OK).send({
+        user: userWithoutSensitiveData
+    });
+});
+
 
 export const authController = {
-  login,
-  refreshTokens,
-  logout,
-  forgotPassword,
-  resetPassword,
+    login,
+    refreshTokens,
+    logout,
+    forgotPassword,
+    resetPassword,
+    me,
 };

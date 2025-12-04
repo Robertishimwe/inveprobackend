@@ -3,6 +3,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser'; // Import cookie-parser
 import { authController } from './auth.controller';
 import validateRequest from '@/middleware/validate.middleware';
+import { authMiddleware } from '@/middleware/auth.middleware';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -18,6 +19,12 @@ router.use(cookieParser());
 router.use(authRateLimiter);
 
 // --- Define Authentication Routes ---
+
+router.get(
+    '/me',
+    authMiddleware,
+    authController.me
+);
 
 router.post(
     '/login',

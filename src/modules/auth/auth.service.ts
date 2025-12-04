@@ -44,7 +44,7 @@ const generateAccessToken = (user: User): string => {
     try {
         const expiresInMs = ms(env.JWT_EXPIRES_IN);
         if (typeof expiresInMs !== 'number' || isNaN(expiresInMs) || expiresInMs <= 0) {
-             throw new Error(`Invalid time string format: "${env.JWT_EXPIRES_IN}"`);
+            throw new Error(`Invalid time string format: "${env.JWT_EXPIRES_IN}"`);
         }
         expiresInSeconds = Math.floor(expiresInMs / 1000);
     } catch (e) {
@@ -76,11 +76,11 @@ const generateAndStoreRefreshToken = async (user: User, ipAddress?: string, user
     let expiryDate: Date;
     try {
         const expiryMs = ms(`${env.JWT_REFRESH_EXPIRES_IN_DAYS}d`);
-         if (typeof expiryMs !== 'number' || isNaN(expiryMs) || expiryMs <= 0) {
-             throw new Error(`Invalid JWT_REFRESH_EXPIRES_IN_DAYS format: "${env.JWT_REFRESH_EXPIRES_IN_DAYS}"`);
+        if (typeof expiryMs !== 'number' || isNaN(expiryMs) || expiryMs <= 0) {
+            throw new Error(`Invalid JWT_REFRESH_EXPIRES_IN_DAYS format: "${env.JWT_REFRESH_EXPIRES_IN_DAYS}"`);
         }
         expiryDate = new Date(Date.now() + expiryMs);
-    } catch(e) {
+    } catch (e) {
         const defaultDays = 7;
         logger.error(`Invalid JWT_REFRESH_EXPIRES_IN_DAYS format: "${env.JWT_REFRESH_EXPIRES_IN_DAYS}". Defaulting to ${defaultDays} days.`, { error: e });
         expiryDate = new Date(Date.now() + defaultDays * 24 * 60 * 60 * 1000); // Default fallback
@@ -120,10 +120,10 @@ const findAndValidateRefreshToken = async (rawRefreshToken: string): Promise<Ref
     let matchedTokenRecord: RefreshToken | null = null;
     for (const tokenRecord of potentialValidTokens) {
         const isMatch = await compareToken(rawRefreshToken, tokenRecord.tokenHash);
-         if (isMatch) {
+        if (isMatch) {
             matchedTokenRecord = tokenRecord;
             break;
-         }
+        }
     }
 
     if (!matchedTokenRecord) {
@@ -148,9 +148,26 @@ const loginUserWithEmailAndPassword = async (
     password: string,
     ipAddress?: string,
     userAgent?: string
-): Promise<{ user: Omit<User, 'passwordHash'>; tokens: AuthTokens }> => {
+): Promise<{ user: Omit<User, 'passwordHash' | 'createdAt' | 'updatedAt'>; tokens: AuthTokens }> => {
     const lowerCaseEmail = email.toLowerCase();
-    const user = await prisma.user.findUnique({ where: { email: lowerCaseEmail } });
+    const user = await prisma.user.findUnique({
+        where: { email: lowerCaseEmail },
+        include: {
+            roles: {
+                include: {
+                    role: {
+                        include: {
+                            permissions: {
+                                include: {
+                                    permission: true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
     // Define logContext upfront
     const logContext: LogContext = { function: 'login', email: lowerCaseEmail, ipAddress, tenantId: user?.tenantId, userId: user?.id };
 
@@ -179,12 +196,12 @@ const loginUserWithEmailAndPassword = async (
 
     logger.info('Login successful', logContext);
 
-    // Exclude password hash from returned user object
+    // Exclude password hash and timestamps from returned user object
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, ...userWithoutPassword } = user;
+    const { passwordHash, createdAt, updatedAt, ...userWithoutSensitiveData } = user;
 
     return {
-        user: userWithoutPassword,
+        user: userWithoutSensitiveData,
         tokens: { accessToken, refreshToken: rawRefreshToken },
     };
 };
@@ -239,7 +256,7 @@ const refreshAuthTokens = async (
     } catch (error) {
         logContext.error = error; // Add error to context for logging
         if (error instanceof ApiError && error.statusCode === httpStatus.UNAUTHORIZED) {
-             logger.warn(`Refresh token validation failed: ${error.message}.`, logContext);
+            logger.warn(`Refresh token validation failed: ${error.message}.`, logContext);
             throw error; // Re-throw the specific ApiError
         }
         logger.error(`Error during token refresh`, logContext);
@@ -270,15 +287,15 @@ const logoutUser = async (rawRefreshToken: string): Promise<void> => {
 
     } catch (error) {
         logContext.error = error; // Add error to context
-         // If findAndValidateRefreshToken threw an error (token not found, expired, already revoked)
-         if (error instanceof ApiError && error.statusCode === httpStatus.UNAUTHORIZED) {
+        // If findAndValidateRefreshToken threw an error (token not found, expired, already revoked)
+        if (error instanceof ApiError && error.statusCode === httpStatus.UNAUTHORIZED) {
             logger.warn(`Logout attempt with invalid/expired/revoked refresh token: ${error.message}`, logContext);
-         } else {
+        } else {
             // Log unexpected errors during the process
-             logger.error(`Error during logout process`, logContext);
-         }
-         // We don't throw an error here. Logout should succeed from the client's perspective
-         // even if the token was already invalid server-side. Client should clear its tokens.
+            logger.error(`Error during logout process`, logContext);
+        }
+        // We don't throw an error here. Logout should succeed from the client's perspective
+        // even if the token was already invalid server-side. Client should clear its tokens.
     }
 };
 
@@ -309,17 +326,17 @@ const forgotPassword = async (email: string): Promise<void> => {
     let expiryDate: Date;
     try {
         const expiryMs = ms(env.PASSWORD_RESET_EXPIRES_IN);
-         if (typeof expiryMs !== 'number' || isNaN(expiryMs) || expiryMs <= 0) {
-             throw new Error(`Invalid time string format: "${env.PASSWORD_RESET_EXPIRES_IN}"`);
+        if (typeof expiryMs !== 'number' || isNaN(expiryMs) || expiryMs <= 0) {
+            throw new Error(`Invalid time string format: "${env.PASSWORD_RESET_EXPIRES_IN}"`);
         }
         expiryDate = new Date(Date.now() + expiryMs);
     } catch (e) {
-         logger.error(`Invalid PASSWORD_RESET_EXPIRES_IN format: "${env.PASSWORD_RESET_EXPIRES_IN}". Defaulting to 1 hour.`, { error: e });
-         expiryDate = new Date(Date.now() + 60 * 60 * 1000); // Default to 1 hour
+        logger.error(`Invalid PASSWORD_RESET_EXPIRES_IN format: "${env.PASSWORD_RESET_EXPIRES_IN}". Defaulting to 1 hour.`, { error: e });
+        expiryDate = new Date(Date.now() + 60 * 60 * 1000); // Default to 1 hour
     }
 
     // Store hashed token in DB (consider removing old tokens)
-    await prisma.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null }});
+    await prisma.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } });
     await prisma.passwordResetToken.create({
         data: {
             userId: user.id,
@@ -346,7 +363,7 @@ const forgotPassword = async (email: string): Promise<void> => {
         logger.error(`Password reset email failed to send`, logContext);
         // Silently fail from user perspective, but log the error.
     }
-     // Always return void to the controller
+    // Always return void to the controller
 };
 
 
@@ -361,23 +378,23 @@ const resetPassword = async (rawResetToken: string, newPassword: string): Promis
     // Define context with all potential fields marked optional initially
     const logContext: LogContext = { function: 'resetPassword', userId: null, tenantId: null, email: null, tokenId: null };
 
-     // 1. Find potentially matching, unused, non-expired token records
-     const potentialTokenRecords = await prisma.passwordResetToken.findMany({
+    // 1. Find potentially matching, unused, non-expired token records
+    const potentialTokenRecords = await prisma.passwordResetToken.findMany({
         where: {
             usedAt: null, // Not already used
             expiresAt: { gt: new Date() } // Not expired
         }
-     });
+    });
 
-     let matchedTokenRecord: PasswordResetToken | null = null;
-     for (const tokenRecord of potentialTokenRecords) {
-         // 2. Compare provided raw token with stored hash
-         const isMatch = await compareToken(rawResetToken, tokenRecord.tokenHash);
-         if (isMatch) {
+    let matchedTokenRecord: PasswordResetToken | null = null;
+    for (const tokenRecord of potentialTokenRecords) {
+        // 2. Compare provided raw token with stored hash
+        const isMatch = await compareToken(rawResetToken, tokenRecord.tokenHash);
+        if (isMatch) {
             matchedTokenRecord = tokenRecord;
             break;
-         }
-     }
+        }
+    }
 
     if (!matchedTokenRecord) {
         logger.warn(`Password reset attempt failed: Invalid or expired token provided.`, logContext);
@@ -391,8 +408,8 @@ const resetPassword = async (rawResetToken: string, newPassword: string): Promis
     const user = await prisma.user.findUnique({ where: { id: matchedTokenRecord.userId } });
     if (!user || !user.isActive) {
         logger.error(`Password reset failed: User not found or inactive for a valid token.`, logContext);
-         // Mark token as used even if user not found to prevent reuse
-        await prisma.passwordResetToken.update({ where: { id: matchedTokenRecord.id }, data: { usedAt: new Date() }});
+        // Mark token as used even if user not found to prevent reuse
+        await prisma.passwordResetToken.update({ where: { id: matchedTokenRecord.id }, data: { usedAt: new Date() } });
         throw new ApiError(httpStatus.BAD_REQUEST, 'Associated user account not found or inactive.');
     }
     // Update logContext properties
@@ -421,7 +438,7 @@ const resetPassword = async (rawResetToken: string, newPassword: string): Promis
                 data: { revokedAt: new Date() }
             });
         });
-         logger.info(`Password reset successful`, logContext);
+        logger.info(`Password reset successful`, logContext);
     } catch (error) {
         logContext.error = error; // Add error to context
         logger.error(`Password reset transaction failed`, logContext);
@@ -433,9 +450,9 @@ const resetPassword = async (rawResetToken: string, newPassword: string): Promis
 
 // Export the public service methods
 export const authService = {
-  loginUserWithEmailAndPassword,
-  refreshAuthTokens,
-  logoutUser,
-  forgotPassword,
-  resetPassword,
+    loginUserWithEmailAndPassword,
+    refreshAuthTokens,
+    logoutUser,
+    forgotPassword,
+    resetPassword,
 };

@@ -50,7 +50,7 @@ describe('POS Module Integration Tests', () => {
         const role = await prisma.role.create({
             data: {
                 tenantId,
-                name: 'POS Admin',
+                name: 'Tenant Admin',
                 permissions: {
                     create: createdPermissions.map((p) => ({
                         permission: { connect: { id: p.id } },

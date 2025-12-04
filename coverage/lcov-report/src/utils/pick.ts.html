@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">87.5% </span>
+                <span class="strong">25% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>7/8</span>
+                <span class='fraction'>2/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">75% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>3/4</span>
+                <span class='fraction'>0/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/2</span>
+                <span class='fraction'>0/2</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">87.5% </span>
+                <span class="strong">25% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>7/8</span>
+                <span class='fraction'>2/8</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -105,24 +105,24 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">76x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">76x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">437x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">48x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">437x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// src/utils/pick.ts
 &nbsp;
 /**
@@ -135,20 +135,20 @@
  * @param {K[]} keys - An array of keys (strings or symbols) to pick.
  * @returns {Pick&lt;T, K&gt;} - A new object with properties matching the specified keys.
  */
-const pick = &lt;T extends object, K extends keyof T&gt;(object: T | null | undefined, keys: K[]): Pick&lt;T, K&gt; =&gt; {
+const pick = <span class="fstat-no" title="function not covered" >&lt;T extends object, K extends keyof T&gt;(o</span>bject: T | null | undefined, keys: K[]): Pick&lt;T, K&gt; =&gt; {
     // Return empty object if source is null or undefined
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (object === null || object === undefined) {
+<span class="cstat-no" title="statement not covered" >    <span class="missing-if-branch" title="if path not taken" >I</span>if (object === null || object === undefined) {</span>
 <span class="cstat-no" title="statement not covered" >      return {} as Pick&lt;T, K&gt;;</span>
     }
   
     // Use reduce to build the new object
-    return keys.reduce((obj, key) =&gt; {
+<span class="cstat-no" title="statement not covered" >    return keys.reduce(<span class="fstat-no" title="function not covered" >(o</span>bj, key) =&gt; {</span>
       // Check if the key exists directly on the object (avoids prototype properties)
-      if (Object.prototype.hasOwnProperty.call(object, key)) {
+<span class="cstat-no" title="statement not covered" >      <span class="missing-if-branch" title="if path not taken" >I</span>if (Object.prototype.hasOwnProperty.call(object, key)) {</span>
         // Assign the value to the new object
-        obj[key] = object[key];
+<span class="cstat-no" title="statement not covered" >        obj[key] = object[key];</span>
       }
-      return obj;
+<span class="cstat-no" title="statement not covered" >      return obj;</span>
     }, {} as Pick&lt;T, K&gt;); // Initialize with an empty object cast to the target type
   };
   
@@ -160,7 +160,7 @@ const pick = &lt;T extends object, K extends keyof T&gt;(object: T | null | unde
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-04T15:15:12.910Z
+                at 2025-12-04T17:50:32.632Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
