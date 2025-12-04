@@ -24,21 +24,21 @@ import { CreatePOItemDto } from './dto/po-item.dto';
 import pick from '@/utils/pick'; // Import pick utility
 
 // Define log context type if not already defined globally
-type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; poId?: string | null; poNumber?: string | null; data?: any; error?: any; [key: string]: any; };
+type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; poId?: string | null; poNumber?: string | null; data?: any; error?: any;[key: string]: any; };
 
 // --- Type Helpers ---
 // For detailed view (GET /:poId) includes full items and related entities
 type PurchaseOrderWithDetails = PurchaseOrder & {
-    supplier: Pick<Supplier, 'id'|'name'>;
-    location: Pick<Location, 'id'|'name'>; // Delivery location
-    createdByUser: Pick<User, 'id'|'firstName'|'lastName'> | null;
-    items: (PurchaseOrderItem & { product: Pick<Product, 'id'|'sku'|'name'|'requiresSerialNumber'|'requiresLotTracking'|'requiresExpiryDate'> })[];
+    supplier: Pick<Supplier, 'id' | 'name'>;
+    location: Pick<Location, 'id' | 'name'>; // Delivery location
+    createdByUser: Pick<User, 'id' | 'firstName' | 'lastName'> | null;
+    items: (PurchaseOrderItem & { product: Pick<Product, 'id' | 'sku' | 'name' | 'requiresSerialNumber' | 'requiresLotTracking' | 'requiresExpiryDate'> })[];
 };
 // Type for list view (doesn't include full items for performance)
 type PurchaseOrderSummary = PurchaseOrder & {
-    supplier: Pick<Supplier, 'id'|'name'>;
-    location: Pick<Location, 'id'|'name'>;
-    createdByUser: Pick<User, 'id'|'firstName'|'lastName'> | null;
+    supplier: Pick<Supplier, 'id' | 'name'>;
+    location: Pick<Location, 'id' | 'name'>;
+    createdByUser: Pick<User, 'id' | 'firstName' | 'lastName'> | null;
     _count: { items: number } | null; // Include item count
 };
 
@@ -71,10 +71,10 @@ async function generatePONumber(tenantId: string, tx: Prisma.TransactionClient):
 
     } catch (seqError: any) {
         logger.error(`Error fetching PO number from sequence ${sequenceName}`, { tenantId, error: seqError });
-         if (seqError?.code === '42P01') { // PostgreSQL code for undefined_table/sequence
-             throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Database sequence "${sequenceName}" not found. Please ensure it exists.`);
-         }
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Could not generate PO number from sequence.`);
+        if (seqError?.code === '42P01') { // PostgreSQL code for undefined_table/sequence
+            throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Database sequence "${sequenceName}" not found. Please ensure it exists.`);
+        }
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Could not generate PO number from sequence.`);
     }
 }
 
@@ -140,37 +140,37 @@ async function _updateInventoryItemQuantity(
     locationId: string,
     quantityChange: number | Prisma.Decimal
 ): Promise<InventoryItem> { // Return type specified
-     const quantityChangeDecimal = new Prisma.Decimal(quantityChange);
-      if (quantityChangeDecimal.isZero()) {
+    const quantityChangeDecimal = new Prisma.Decimal(quantityChange);
+    if (quantityChangeDecimal.isZero()) {
         // This case should ideally be filtered out before calling this helper
         logger.warn(`_updateInventoryItemQuantity called with zero quantity change for Product ${productId}, Location ${locationId}`);
         // Attempt to find existing item, or handle error if it must exist
-         const existingItem = await tx.inventoryItem.findUnique({
-             where: { tenantId_productId_locationId: { tenantId, productId, locationId } }
-         });
-          if (!existingItem) {
-             // If the item *must* exist for a zero change call (unlikely), throw error
-             // Otherwise, maybe return null or a placeholder? For now, let's assume upsert handles creation if needed.
-             // Reverting to throwing error as upsert below will handle creation if needed, zero change is invalid input here.
-              throw new Error("_updateInventoryItemQuantity quantity cannot be zero.");
-         }
-         return existingItem; // Return existing item if quantity change is zero
-      }
-      const inventoryItem = await tx.inventoryItem.upsert({
+        const existingItem = await tx.inventoryItem.findUnique({
+            where: { tenantId_productId_locationId: { tenantId, productId, locationId } }
+        });
+        if (!existingItem) {
+            // If the item *must* exist for a zero change call (unlikely), throw error
+            // Otherwise, maybe return null or a placeholder? For now, let's assume upsert handles creation if needed.
+            // Reverting to throwing error as upsert below will handle creation if needed, zero change is invalid input here.
+            throw new Error("_updateInventoryItemQuantity quantity cannot be zero.");
+        }
+        return existingItem; // Return existing item if quantity change is zero
+    }
+    const inventoryItem = await tx.inventoryItem.upsert({
         where: { tenantId_productId_locationId: { tenantId, productId, locationId } },
         create: { tenantId, productId, locationId, quantityOnHand: quantityChangeDecimal, quantityAllocated: 0, quantityIncoming: 0 }, // Initialize other counts
         update: { quantityOnHand: { increment: quantityChangeDecimal }, updatedAt: new Date() },
     });
-     // Post-update Check for negative stock
-     if (inventoryItem.quantityOnHand.lessThan(0)) {
-          const allowNegativeStock = false; // TODO: Get from tenant config via tx if needed
-          if (!allowNegativeStock) {
-              throw new ApiError(httpStatus.BAD_REQUEST, `Operation results in negative stock for product ID ${productId} at location ${locationId}.`);
-          } else {
-               logger.warn(`Stock quantity went negative for item ${inventoryItem.id} (Allowed by config).`);
-          }
-     }
-     return inventoryItem;
+    // Post-update Check for negative stock
+    if (inventoryItem.quantityOnHand.lessThan(0)) {
+        const allowNegativeStock = false; // TODO: Get from tenant config via tx if needed
+        if (!allowNegativeStock) {
+            throw new ApiError(httpStatus.BAD_REQUEST, `Operation results in negative stock for product ID ${productId} at location ${locationId}.`);
+        } else {
+            logger.warn(`Stock quantity went negative for item ${inventoryItem.id} (Allowed by config).`);
+        }
+    }
+    return inventoryItem;
 }
 
 
@@ -193,7 +193,7 @@ const createPurchaseOrder = async (data: CreatePurchaseOrderDto, tenantId: strin
     if (productIds.length === 0) { throw new ApiError(httpStatus.BAD_REQUEST, `Purchase order must contain at least one item.`); }
     const validProducts = await prisma.product.findMany({ where: { id: { in: productIds }, tenantId, isActive: true }, select: { id: true } });
     if (validProducts.length !== productIds.length) {
-         const missingIds = productIds.filter(id => !validProducts.some(p => p.id === id));
+        const missingIds = productIds.filter(id => !validProducts.some(p => p.id === id));
         throw new ApiError(httpStatus.BAD_REQUEST, `One or more active products not found: ${missingIds.join(', ')}`);
     }
 
@@ -210,13 +210,13 @@ const createPurchaseOrder = async (data: CreatePurchaseOrderDto, tenantId: strin
             logContext.poNumber = poNumber;
             // Use the generated PO number unless a manual one was provided AND allowed
             const finalPoNumber = data.poNumber ?? poNumber; // Allow override if present
-             if (data.poNumber && data.poNumber !== poNumber) { // If manual provided, check its uniqueness
-                 const poNumExists = await tx.purchaseOrder.count({ where: { tenantId, poNumber: data.poNumber } });
-                 if (poNumExists) { throw new ApiError(httpStatus.CONFLICT, `Manual PO Number ${data.poNumber} already exists.`); }
-                 logContext.poNumber = data.poNumber; // Log the manual number used
-             } else {
-                  logContext.finalPoNumber = finalPoNumber; // Log the generated number used
-             }
+            if (data.poNumber && data.poNumber !== poNumber) { // If manual provided, check its uniqueness
+                const poNumExists = await tx.purchaseOrder.count({ where: { tenantId, poNumber: data.poNumber } });
+                if (poNumExists) { throw new ApiError(httpStatus.CONFLICT, `Manual PO Number ${data.poNumber} already exists.`); }
+                logContext.poNumber = data.poNumber; // Log the manual number used
+            } else {
+                logContext.finalPoNumber = finalPoNumber; // Log the generated number used
+            }
 
 
             return await tx.purchaseOrder.create({
@@ -235,12 +235,12 @@ const createPurchaseOrder = async (data: CreatePurchaseOrderDto, tenantId: strin
                     createdByUserId: userId,
                     items: { createMany: { data: itemsData } } // Use prepared itemsData
                 },
-                 include: { // Standard include for response consistency
+                include: { // Standard include for response consistency
                     supplier: { select: { id: true, name: true } },
                     location: { select: { id: true, name: true } },
                     createdByUser: { select: { id: true, firstName: true, lastName: true } },
                     items: { include: { product: { select: { id: true, sku: true, name: true, requiresSerialNumber: true, requiresLotTracking: true, requiresExpiryDate: true } } } }
-                 }
+                }
             });
         });
 
@@ -248,13 +248,13 @@ const createPurchaseOrder = async (data: CreatePurchaseOrderDto, tenantId: strin
         logger.info(`Purchase order created successfully`, logContext);
         return newPO as PurchaseOrderWithDetails;
     } catch (error: any) {
-         if (error instanceof ApiError) throw error; // Re-throw known errors
-         logContext.error = error;
-         logger.error(`Error creating purchase order`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             // Unique constraint violation (likely poNumber if manual override was used and existed)
-             throw new ApiError(httpStatus.CONFLICT, `PO Number conflict or other unique constraint violation during creation.`);
-         }
+        if (error instanceof ApiError) throw error; // Re-throw known errors
+        logContext.error = error;
+        logger.error(`Error creating purchase order`, logContext);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            // Unique constraint violation (likely poNumber if manual override was used and existed)
+            throw new ApiError(httpStatus.CONFLICT, `PO Number conflict or other unique constraint violation during creation.`);
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to create purchase order.');
     }
 };
@@ -290,7 +290,7 @@ const queryPurchaseOrders = async (filter: Prisma.PurchaseOrderWhereInput, order
 
 /** Get Purchase Order By ID */
 const getPurchaseOrderById = async (poId: string, tenantId: string): Promise<PurchaseOrderWithDetails | null> => {
-     const logContext: LogContext = { function: 'getPurchaseOrderById', poId, tenantId };
+    const logContext: LogContext = { function: 'getPurchaseOrderById', poId, tenantId };
     try {
         const po = await prisma.purchaseOrder.findFirst({
             where: { id: poId, tenantId },
@@ -328,9 +328,9 @@ const updatePurchaseOrder = async (poId: string, updateData: UpdatePurchaseOrder
     const allowedUpdates = pick(updateData, allowedFields as (keyof UpdatePurchaseOrderDto)[]);
 
     if (Object.keys(allowedUpdates).length === 0) {
-         logger.info(`PO update skipped: No allowed fields provided or no changes`, logContext);
-         // Return full details
-         return getPurchaseOrderById(poId, tenantId).then(po => { if(!po) throw new ApiError(httpStatus.NOT_FOUND, 'PO not found after skip.'); return po; });
+        logger.info(`PO update skipped: No allowed fields provided or no changes`, logContext);
+        // Return full details
+        return getPurchaseOrderById(poId, tenantId).then(po => { if (!po) throw new ApiError(httpStatus.NOT_FOUND, 'PO not found after skip.'); return po; });
     }
 
     const dataToUpdate: Prisma.PurchaseOrderUpdateInput = {};
@@ -357,7 +357,7 @@ const updatePurchaseOrder = async (poId: string, updateData: UpdatePurchaseOrder
     // Check if, after filtering allowed fields and calculations, there are still effective changes
     if (Object.keys(dataToUpdate).length === 0) {
         logger.info(`PO update skipped: No effective changes after status/value checks`, logContext);
-        return getPurchaseOrderById(poId, tenantId).then(po => { if(!po) throw new ApiError(httpStatus.NOT_FOUND, 'PO not found after skip.'); return po; });
+        return getPurchaseOrderById(poId, tenantId).then(po => { if (!po) throw new ApiError(httpStatus.NOT_FOUND, 'PO not found after skip.'); return po; });
     }
 
     try {
@@ -369,7 +369,7 @@ const updatePurchaseOrder = async (poId: string, updateData: UpdatePurchaseOrder
                 location: { select: { id: true, name: true } },
                 createdByUser: { select: { id: true, firstName: true, lastName: true } },
                 items: { include: { product: { select: { id: true, sku: true, name: true, requiresSerialNumber: true, requiresLotTracking: true, requiresExpiryDate: true } } } }
-             }
+            }
         });
         logger.info(`PO ${existingPO.poNumber} updated successfully`, logContext);
         return updatedPO as PurchaseOrderWithDetails;
@@ -385,42 +385,42 @@ const updatePurchaseOrder = async (poId: string, updateData: UpdatePurchaseOrder
 
 /** Helper to update PO Status, ensuring valid transitions */
 const _updatePOStatus = async (poId: string, tenantId: string, userId: string, allowedFromStatuses: PurchaseOrderStatus[], newStatus: PurchaseOrderStatus, notes?: string | null): Promise<PurchaseOrderWithDetails> => {
-     const logContext: LogContext = { function: '_updatePOStatus', poId, tenantId, userId, newStatus, notes };
-     const po = await prisma.purchaseOrder.findFirst({ where: { id: poId, tenantId }, select: { id: true, status: true, poNumber: true, notes: true }});
-     if (!po) throw new ApiError(httpStatus.NOT_FOUND, 'Purchase Order not found.');
+    const logContext: LogContext = { function: '_updatePOStatus', poId, tenantId, userId, newStatus, notes };
+    const po = await prisma.purchaseOrder.findFirst({ where: { id: poId, tenantId }, select: { id: true, status: true, poNumber: true, notes: true } });
+    if (!po) throw new ApiError(httpStatus.NOT_FOUND, 'Purchase Order not found.');
 
-     if (!allowedFromStatuses.includes(po.status)) {
-          throw new ApiError(httpStatus.BAD_REQUEST, `Cannot change PO status from ${po.status} to ${newStatus}.`);
-     }
-     if (po.status === newStatus) {
+    if (!allowedFromStatuses.includes(po.status)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Cannot change PO status from ${po.status} to ${newStatus}.`);
+    }
+    if (po.status === newStatus) {
         logger.info(`PO ${po.poNumber} status is already ${newStatus}. No update performed.`, logContext);
-        return getPurchaseOrderById(poId, tenantId).then(fullPo => { if(!fullPo) throw new ApiError(httpStatus.NOT_FOUND, 'PO not found'); return fullPo; });
-     }
+        return getPurchaseOrderById(poId, tenantId).then(fullPo => { if (!fullPo) throw new ApiError(httpStatus.NOT_FOUND, 'PO not found'); return fullPo; });
+    }
 
-     try {
-         const updatedPO = await prisma.purchaseOrder.update({
-             where: { id: poId },
-             data: {
-                 status: newStatus,
-                 notes: notes ? `${po.notes ?? ''}\n[${newStatus} by User ${userId}]: ${notes}`.trim() : po.notes,
-                 updatedAt: new Date()
-             },
-             include: { /* Standard include for PurchaseOrderWithDetails */
+    try {
+        const updatedPO = await prisma.purchaseOrder.update({
+            where: { id: poId },
+            data: {
+                status: newStatus,
+                notes: notes ? `${po.notes ?? ''}\n[${newStatus} by User ${userId}]: ${notes}`.trim() : po.notes,
+                updatedAt: new Date()
+            },
+            include: { /* Standard include for PurchaseOrderWithDetails */
                 supplier: { select: { id: true, name: true } },
                 location: { select: { id: true, name: true } },
                 createdByUser: { select: { id: true, firstName: true, lastName: true } },
                 items: { include: { product: { select: { id: true, sku: true, name: true, requiresSerialNumber: true, requiresLotTracking: true, requiresExpiryDate: true } } } }
-             }
-         });
-          logger.info(`PO ${po.poNumber} status updated to ${newStatus}`, logContext);
-          // TODO: Trigger side effects (update 'incoming' stock, emails)
-          return updatedPO as PurchaseOrderWithDetails;
-     } catch (error: any) {
+            }
+        });
+        logger.info(`PO ${po.poNumber} status updated to ${newStatus}`, logContext);
+        // TODO: Trigger side effects (update 'incoming' stock, emails)
+        return updatedPO as PurchaseOrderWithDetails;
+    } catch (error: any) {
         logContext.error = error;
         logger.error(`Error updating PO status`, logContext);
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') { throw new ApiError(httpStatus.NOT_FOUND, 'PO not found during status update.'); }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update PO status.');
-     }
+    }
 };
 
 /** Submit PO for Approval (DRAFT -> PENDING_APPROVAL) */
@@ -441,11 +441,24 @@ const sendPurchaseOrder = async (poId: string, tenantId: string, userId: string,
 
 /** Cancel Purchase Order */
 const cancelPurchaseOrder = async (poId: string, tenantId: string, userId: string, actionData?: POActionDto): Promise<PurchaseOrderWithDetails> => {
-    const cancellableStatuses: PurchaseOrderStatus[] = [ PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.PENDING_APPROVAL, PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.SENT, PurchaseOrderStatus.PARTIALLY_RECEIVED ];
+    const cancellableStatuses: PurchaseOrderStatus[] = [PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.PENDING_APPROVAL, PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.SENT, PurchaseOrderStatus.PARTIALLY_RECEIVED];
     const reason = actionData?.notes ?? 'Cancelled by user';
     const po = await _updatePOStatus(poId, tenantId, userId, cancellableStatuses, PurchaseOrderStatus.CANCELLED, reason);
-     logger.info(`PO ${po.poNumber} cancelled. Incoming stock reversal may be needed.`);
-     return po;
+    logger.info(`PO ${po.poNumber} cancelled. Incoming stock reversal may be needed.`);
+    return po;
+};
+
+/** Close Purchase Order (Short) */
+const closePurchaseOrder = async (poId: string, tenantId: string, userId: string, actionData?: POActionDto): Promise<PurchaseOrderWithDetails> => {
+    // Business Rule: Only SENT or PARTIALLY_RECEIVED can be closed short.
+    // DRAFT/PENDING should be Cancelled. FULLY_RECEIVED is already done.
+    const allowedStatuses: PurchaseOrderStatus[] = [PurchaseOrderStatus.SENT, PurchaseOrderStatus.PARTIALLY_RECEIVED];
+    const reason = actionData?.notes ?? 'Closed short by user';
+
+    // We use _updatePOStatus which handles the status transition validation
+    const po = await _updatePOStatus(poId, tenantId, userId, allowedStatuses, PurchaseOrderStatus.CLOSED, reason);
+    logger.info(`PO ${po.poNumber} closed short. No further receiving allowed.`);
+    return po;
 };
 
 
@@ -621,7 +634,7 @@ const receivePurchaseOrderItems = async (poId: string, data: ReceivePurchaseOrde
     const poItemsMap = new Map(poForCheck.items.map(item => [item.id, item]));
     // Define the structure for validated items to process inside the transaction
     const itemsToProcess: {
-        poLineItem: PurchaseOrderItem & { product: { id: string; sku: string; name: string; requiresSerialNumber: boolean; isStockTracked: boolean; }};
+        poLineItem: PurchaseOrderItem & { product: { id: string; sku: string; name: string; requiresSerialNumber: boolean; isStockTracked: boolean; } };
         receivedData: ReceivePOItemDto; // The original DTO item for reference
         quantityReceivedDecimal: Prisma.Decimal; // Pre-calculated Decimal quantity
         serialsToReceive: string[]; // Pre-processed serials list
@@ -637,8 +650,8 @@ const receivePurchaseOrderItems = async (poId: string, data: ReceivePurchaseOrde
         }
 
         if (!poLineItem.product.isStockTracked) {
-             logger.warn(`Skipping receive attempt for non-stock-tracked product`, itemLogContext);
-             continue; // Skip non-tracked items from being processed further
+            logger.warn(`Skipping receive attempt for non-stock-tracked product`, itemLogContext);
+            continue; // Skip non-tracked items from being processed further
         }
 
         const quantityReceivedDecimal = new Prisma.Decimal(receivedItemDto.quantityReceived);
@@ -699,65 +712,65 @@ const receivePurchaseOrderItems = async (poId: string, data: ReceivePurchaseOrde
 
             // Process Validated Items within the transaction
             for (const itemData of itemsToProcess) {
-                 const { poLineItem, receivedData, quantityReceivedDecimal, serialsToReceive } = itemData;
-                 const itemLogContext = { ...logContext, poItemId: poLineItem.id, productId: poLineItem.productId }; // Context for item specific logs
-                 const unitCostForTx = poLineItem.unitCost; // Use cost from PO line for inventory transaction
+                const { poLineItem, receivedData, quantityReceivedDecimal, serialsToReceive } = itemData;
+                const itemLogContext = { ...logContext, poItemId: poLineItem.id, productId: poLineItem.productId }; // Context for item specific logs
+                const unitCostForTx = poLineItem.unitCost; // Use cost from PO line for inventory transaction
 
-                 // 4. Update Inventory Item Stock & Collect Transaction Data
-                  if (poLineItem.product.requiresSerialNumber && serialsToReceive.length > 0) {
-                       // Handle serialized items: one stock update and one transaction log per serial
-                       for (const serial of serialsToReceive) {
-                            // Update inventory item quantity (increment by 1)
-                            await _updateInventoryItemQuantity(tx, tenantId, poLineItem.productId, poForCheck.locationId, 1);
-                            // Collect data for batch transaction create later
-                            inventoryTransactionData.push({
-                                tenantId, productId: poLineItem.productId, locationId: poForCheck.locationId,
-                                transactionType: InventoryTransactionType.PURCHASE_RECEIPT,
-                                quantityChange: new Prisma.Decimal(1), // Quantity is 1 per serial
-                                unitCost: unitCostForTx,
-                                relatedPoId: poForCheck.id,
-                                relatedPoItemId: poLineItem.id,
-                                notes: `Received serial for PO ${poForCheck.poNumber}`,
-                                lotNumber: receivedData.lotNumber,
-                                serialNumber: serial, // The specific serial number
-                                userId: userId,
-                                expiryDate: receivedData.expiryDate ? new Date(receivedData.expiryDate) : undefined
-                           });
-                       }
-                  } else if (!poLineItem.product.requiresSerialNumber) {
-                      // Non-serialized item: single stock update and collect one transaction log
-                       await _updateInventoryItemQuantity(tx, tenantId, poLineItem.productId, poForCheck.locationId, quantityReceivedDecimal);
-                       inventoryTransactionData.push({
+                // 4. Update Inventory Item Stock & Collect Transaction Data
+                if (poLineItem.product.requiresSerialNumber && serialsToReceive.length > 0) {
+                    // Handle serialized items: one stock update and one transaction log per serial
+                    for (const serial of serialsToReceive) {
+                        // Update inventory item quantity (increment by 1)
+                        await _updateInventoryItemQuantity(tx, tenantId, poLineItem.productId, poForCheck.locationId, 1);
+                        // Collect data for batch transaction create later
+                        inventoryTransactionData.push({
                             tenantId, productId: poLineItem.productId, locationId: poForCheck.locationId,
                             transactionType: InventoryTransactionType.PURCHASE_RECEIPT,
-                            quantityChange: quantityReceivedDecimal, // Full quantity received
+                            quantityChange: new Prisma.Decimal(1), // Quantity is 1 per serial
                             unitCost: unitCostForTx,
                             relatedPoId: poForCheck.id,
                             relatedPoItemId: poLineItem.id,
-                            notes: `Received item for PO ${poForCheck.poNumber}`,
+                            notes: `Received serial for PO ${poForCheck.poNumber}`,
                             lotNumber: receivedData.lotNumber,
-                            serialNumber: null, // No single serial number here
+                            serialNumber: serial, // The specific serial number
                             userId: userId,
                             expiryDate: receivedData.expiryDate ? new Date(receivedData.expiryDate) : undefined
                         });
-                  }
-                  // NOTE: The validation should prevent reaching here if serials are required but not provided correctly.
+                    }
+                } else if (!poLineItem.product.requiresSerialNumber) {
+                    // Non-serialized item: single stock update and collect one transaction log
+                    await _updateInventoryItemQuantity(tx, tenantId, poLineItem.productId, poForCheck.locationId, quantityReceivedDecimal);
+                    inventoryTransactionData.push({
+                        tenantId, productId: poLineItem.productId, locationId: poForCheck.locationId,
+                        transactionType: InventoryTransactionType.PURCHASE_RECEIPT,
+                        quantityChange: quantityReceivedDecimal, // Full quantity received
+                        unitCost: unitCostForTx,
+                        relatedPoId: poForCheck.id,
+                        relatedPoItemId: poLineItem.id,
+                        notes: `Received item for PO ${poForCheck.poNumber}`,
+                        lotNumber: receivedData.lotNumber,
+                        serialNumber: null, // No single serial number here
+                        userId: userId,
+                        expiryDate: receivedData.expiryDate ? new Date(receivedData.expiryDate) : undefined
+                    });
+                }
+                // NOTE: The validation should prevent reaching here if serials are required but not provided correctly.
 
-                 // 5. Update quantityReceived on the PO line item using 'tx'
-                 await tx.purchaseOrderItem.update({
-                      where: { id: poLineItem.id },
-                      // Increment the received quantity by the amount received in this specific DTO item
-                      data: { quantityReceived: { increment: quantityReceivedDecimal } }
-                  });
-                 logger.debug(`Updated PO Item ${poLineItem.id} received quantity by ${quantityReceivedDecimal}`, itemLogContext);
+                // 5. Update quantityReceived on the PO line item using 'tx'
+                await tx.purchaseOrderItem.update({
+                    where: { id: poLineItem.id },
+                    // Increment the received quantity by the amount received in this specific DTO item
+                    data: { quantityReceived: { increment: quantityReceivedDecimal } }
+                });
+                logger.debug(`Updated PO Item ${poLineItem.id} received quantity by ${quantityReceivedDecimal}`, itemLogContext);
 
             } // End loop through itemsToProcess
 
             // Batch create all inventory transaction logs collected
             if (inventoryTransactionData.length > 0) {
-                 const createdTxResult = await tx.inventoryTransaction.createMany({ data: inventoryTransactionData });
-                 logContext.transactionsCreated = createdTxResult.count;
-                 logger.debug(`Batch created ${createdTxResult.count} inventory transactions.`, logContext);
+                const createdTxResult = await tx.inventoryTransaction.createMany({ data: inventoryTransactionData });
+                logContext.transactionsCreated = createdTxResult.count;
+                logger.debug(`Batch created ${createdTxResult.count} inventory transactions.`, logContext);
             } else {
                 // This case should ideally not be reached if itemsToProcess was not empty,
                 // but log just in case.
@@ -766,35 +779,35 @@ const receivePurchaseOrderItems = async (poId: string, data: ReceivePurchaseOrde
 
             // 6. Determine and update overall PO status after processing all items
             // Fetch the latest state of *all* items on the PO within the transaction
-             const updatedItems = await tx.purchaseOrderItem.findMany({
-                 where: { poId: poId },
-                 select: { quantityOrdered: true, quantityReceived: true }
-                });
-             const totalOrdered = updatedItems.reduce((sum, item) => sum.plus(item.quantityOrdered), new Prisma.Decimal(0));
-             const totalReceived = updatedItems.reduce((sum, item) => sum.plus(item.quantityReceived), new Prisma.Decimal(0));
+            const updatedItems = await tx.purchaseOrderItem.findMany({
+                where: { poId: poId },
+                select: { quantityOrdered: true, quantityReceived: true }
+            });
+            const totalOrdered = updatedItems.reduce((sum, item) => sum.plus(item.quantityOrdered), new Prisma.Decimal(0));
+            const totalReceived = updatedItems.reduce((sum, item) => sum.plus(item.quantityReceived), new Prisma.Decimal(0));
 
             let newStatus = poForCheck.status; // Start with current status from pre-fetch
             const tolerance = new Prisma.Decimal('0.00001'); // Tolerance for decimal comparison
 
             if (totalReceived.greaterThan(0)) { // Only change status if something has now been received
-                 if (totalReceived.plus(tolerance).greaterThanOrEqualTo(totalOrdered)) {
-                     newStatus = PurchaseOrderStatus.FULLY_RECEIVED;
-                 } else {
-                     // If received > 0 but less than ordered, it's partially received
-                     newStatus = PurchaseOrderStatus.PARTIALLY_RECEIVED;
-                 }
+                if (totalReceived.plus(tolerance).greaterThanOrEqualTo(totalOrdered)) {
+                    newStatus = PurchaseOrderStatus.FULLY_RECEIVED;
+                } else {
+                    // If received > 0 but less than ordered, it's partially received
+                    newStatus = PurchaseOrderStatus.PARTIALLY_RECEIVED;
+                }
             }
             // If totalReceived is still 0, status remains unchanged (SENT)
 
             // Update PO status only if it changed
             if (newStatus !== poForCheck.status) {
-                 await tx.purchaseOrder.update({
-                     where: { id: poId },
-                     data: { status: newStatus, updatedAt: new Date() }
-                    });
-                 logContext.newStatus = newStatus;
+                await tx.purchaseOrder.update({
+                    where: { id: poId },
+                    data: { status: newStatus, updatedAt: new Date() }
+                });
+                logContext.newStatus = newStatus;
             } else {
-                 logContext.newStatus = poForCheck.status; // Log status even if unchanged
+                logContext.newStatus = poForCheck.status; // Log status even if unchanged
             }
 
             return newStatus; // Return the final status determined within the transaction
@@ -808,9 +821,9 @@ const receivePurchaseOrderItems = async (poId: string, data: ReceivePurchaseOrde
         const errorEndTime = Date.now();
         logContext.durationMs = errorEndTime - startTime; // Log total time until error
         if (error instanceof ApiError) {
-             logContext.apiError = { statusCode: error.statusCode, message: error.message };
+            logContext.apiError = { statusCode: error.statusCode, message: error.message };
         } else {
-             logContext.error = error;
+            logContext.error = error;
         }
         logger.error(`Error receiving purchase order items`, logContext);
         // Don't throw the original error directly if it's an internal DB issue leaking details
@@ -832,6 +845,7 @@ export const purchaseOrderService = {
     approvePurchaseOrder,
     sendPurchaseOrder,
     cancelPurchaseOrder,
+    closePurchaseOrder,
     // Receiving
     receivePurchaseOrderItems,
 };

@@ -60,7 +60,7 @@ router.route('/:poId')
         validateRequest(UpdatePurchaseOrderDto),// Body validation (for allowed fields)
         purchaseOrderController.updatePurchaseOrder // Handler
     );
-    // Note: DELETE /:poId is often restricted or handled differently (e.g., only for DRAFT status)
+// Note: DELETE /:poId is often restricted or handled differently (e.g., only for DRAFT status)
 
 
 // --- Define Purchase Order Action Routes ---
@@ -111,6 +111,18 @@ router.post(
     checkPermissions(['po:cancel']),
     validateRequest(POActionDto), // Allows optional cancellation reason notes
     purchaseOrderController.cancelPurchaseOrder
+);
+
+/**
+ * POST /api/v1/purchase-orders/:poId/close
+ * Closes a PO (short) if SENT or PARTIALLY_RECEIVED.
+ * Requires 'po:close' permission.
+ */
+router.post(
+    '/:poId/close',
+    checkPermissions(['po:close']),
+    validateRequest(POActionDto), // Allows optional notes
+    purchaseOrderController.closePurchaseOrder
 );
 
 /**

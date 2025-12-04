@@ -71,6 +71,7 @@ enum PurchaseOrderStatus {
   SENT              // PO sent to the supplier
   PARTIALLY_RECEIVED// Some, but not all, items have been received
   FULLY_RECEIVED    // All items have been received
+  CLOSED            // PO manually closed (short)
   CANCELLED         // PO cancelled
 }
 

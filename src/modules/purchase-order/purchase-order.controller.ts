@@ -47,31 +47,31 @@ const getPurchaseOrders = catchAsync(async (req: Request, res: Response) => {
     if (filterParams.locationId) filter.locationId = filterParams.locationId as string;
     // Validate status against enum values
     if (filterParams.status && Object.values(PurchaseOrderStatus).includes(filterParams.status as PurchaseOrderStatus)) {
-         filter.status = { equals: filterParams.status as PurchaseOrderStatus };
+        filter.status = { equals: filterParams.status as PurchaseOrderStatus };
     } else if (filterParams.status) {
-         throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(PurchaseOrderStatus).join(', ')}`);
+        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(PurchaseOrderStatus).join(', ')}`);
     }
     if (filterParams.userId) filter.createdByUserId = filterParams.userId as string;
     if (filterParams.poNumber) filter.poNumber = { contains: filterParams.poNumber as string, mode: 'insensitive' };
 
     // Date filtering for orderDate
-     if (filterParams.dateFrom || filterParams.dateTo) {
+    if (filterParams.dateFrom || filterParams.dateTo) {
         filter.orderDate = {};
-         try {
+        try {
             if (filterParams.dateFrom) filter.orderDate.gte = new Date(filterParams.dateFrom as string);
             if (filterParams.dateTo) filter.orderDate.lte = new Date(filterParams.dateTo as string);
         } catch (e) {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for order date filters. Use ISO 8601 format.');
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for order date filters. Use ISO 8601 format.');
         }
     }
     // Date filtering for expectedDeliveryDate
     if (filterParams.expectedDateFrom || filterParams.expectedDateTo) {
         filter.expectedDeliveryDate = {};
-         try {
+        try {
             if (filterParams.expectedDateFrom) filter.expectedDeliveryDate.gte = new Date(filterParams.expectedDateFrom as string);
             if (filterParams.expectedDateTo) filter.expectedDeliveryDate.lte = new Date(filterParams.expectedDateTo as string);
         } catch (e) {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for expected date filters. Use ISO 8601 format.');
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for expected date filters. Use ISO 8601 format.');
         }
     }
 
@@ -185,6 +185,16 @@ const cancelPurchaseOrder = catchAsync(async (req: Request, res: Response) => {
     res.status(httpStatus.OK).send(purchaseOrder); // Send back the cancelled PO
 });
 
+/** Controller to close a PO (short) */
+const closePurchaseOrder = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req);
+    const poId = req.params.poId;
+    const userId = req.user!.id;
+    // req.body is validated POActionDto (optional reason/notes)
+    const purchaseOrder = await purchaseOrderService.closePurchaseOrder(poId, tenantId, userId, req.body);
+    res.status(httpStatus.OK).send(purchaseOrder);
+});
+
 /** Controller to receive items against a PO */
 const receiveItems = catchAsync(async (req: Request, res: Response) => {
     const tenantId = getTenantIdFromRequest(req);
@@ -211,5 +221,6 @@ export const purchaseOrderController = {
     approvePurchaseOrder,
     sendPurchaseOrder,
     cancelPurchaseOrder,
+    closePurchaseOrder,
     receiveItems,
 };
