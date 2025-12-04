@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">9.3% </span>
+                <span class="strong">16.27% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>12/129</span>
+                <span class='fraction'>21/129</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">4.34% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/46</span>
+                <span class='fraction'>2/46</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">12.5% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/8</span>
+                <span class='fraction'>1/8</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">9.44% </span>
+                <span class="strong">16.53% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>12/127</span>
+                <span class='fraction'>21/127</span>
             </div>
         
             
@@ -387,45 +387,45 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -687,11 +687,11 @@ type CategoryTreeNode = Category &amp; { children: CategoryTreeNode[] };
 /**
  * Create a new category.
  */
-const createCategory = <span class="fstat-no" title="function not covered" >async </span>(data: CreateCategoryDto, tenantId: string): Promise&lt;Category&gt; =&gt; {
-    const logContext: LogContext = <span class="cstat-no" title="statement not covered" >{ function: 'createCategory', tenantId, name: data.name, parentId: data.parentCategoryId };</span>
+const createCategory = async (data: CreateCategoryDto, tenantId: string): Promise&lt;Category&gt; =&gt; {
+    const logContext: LogContext = { function: 'createCategory', tenantId, name: data.name, parentId: data.parentCategoryId };
 &nbsp;
     // 1. Check name uniqueness within the same parent (or at top level) for the tenant
-    const existing = <span class="cstat-no" title="statement not covered" >await prisma.category.findFirst({</span>
+    const existing = await prisma.category.findFirst({
         where: {
             name: data.name,
             tenantId: tenantId,
@@ -699,13 +699,13 @@ const createCategory = <span class="fstat-no" title="function not covered" >asyn
         },
         select: { id: true }
     });
-<span class="cstat-no" title="statement not covered" >    <span class="missing-if-branch" title="if path not taken" >I</span>if (existing) {</span>
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (existing) {
 <span class="cstat-no" title="statement not covered" >        logger.warn(`Category creation failed: Name "${data.name}" already exists under the specified parent`, logContext);</span>
 <span class="cstat-no" title="statement not covered" >        throw new ApiError(httpStatus.CONFLICT, `Category name "${data.name}" must be unique under the same parent.`);</span>
     }
 &nbsp;
     // 2. Validate parentCategoryId if provided
-<span class="cstat-no" title="statement not covered" >    <span class="missing-if-branch" title="if path not taken" >I</span>if (data.parentCategoryId) {</span>
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (data.parentCategoryId) {
         const parentExists = <span class="cstat-no" title="statement not covered" >await prisma.category.count({ where: { id: data.parentCategoryId, tenantId }});</span>
 <span class="cstat-no" title="statement not covered" >        <span class="missing-if-branch" title="if path not taken" >I</span>if (!parentExists) {</span>
 <span class="cstat-no" title="statement not covered" >            logger.warn(`Category creation failed: Parent category not found`, logContext);</span>
@@ -714,8 +714,8 @@ const createCategory = <span class="fstat-no" title="function not covered" >asyn
     }
 &nbsp;
     // 3. Create in DB
-<span class="cstat-no" title="statement not covered" >    try {</span>
-        const category = <span class="cstat-no" title="statement not covered" >await prisma.category.create({</span>
+    try {
+        const category = await prisma.category.create({
             data: {
                 tenantId,
                 name: data.name,
@@ -723,10 +723,10 @@ const createCategory = <span class="fstat-no" title="function not covered" >asyn
                 parentCategoryId: data.parentCategoryId // Prisma handles null correctly
             },
         });
-<span class="cstat-no" title="statement not covered" >        logContext.categoryId = category.id;</span>
-<span class="cstat-no" title="statement not covered" >        logger.info(`Category created successfully`, logContext);</span>
+        logContext.categoryId = category.id;
+        logger.info(`Category created successfully`, logContext);
         // Add cache invalidation if category caching is implemented
-<span class="cstat-no" title="statement not covered" >        return category;</span>
+        return category;
     } catch (error: any) {
 <span class="cstat-no" title="statement not covered" >        logContext.error = error;</span>
 <span class="cstat-no" title="statement not covered" >        logger.error(`Error creating category`, logContext);</span>
@@ -973,7 +973,7 @@ export const categoryService = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-04T04:42:18.709Z
+                at 2025-12-04T05:26:11.906Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

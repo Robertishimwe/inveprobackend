@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">18.18% </span>
+                <span class="strong">30.3% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>12/66</span>
+                <span class='fraction'>20/66</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">33.33% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/6</span>
+                <span class='fraction'>2/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">21.42% </span>
+                <span class="strong">35.71% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>12/56</span>
+                <span class='fraction'>20/56</span>
             </div>
         
             
@@ -195,10 +195,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
@@ -263,14 +263,14 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
@@ -315,11 +315,11 @@ import pick from '@/utils/pick';
 import { getTenantIdFromRequest } from '@/middleware/tenant.middleware';
 import { Prisma } from '@prisma/client';
 &nbsp;
-const createProduct = catchAsync(<span class="fstat-no" title="function not covered" >async </span>(req: Request, res: Response) =&gt; {
-    const tenantId = <span class="cstat-no" title="statement not covered" >getTenantIdFromRequest(req);</span>
+const createProduct = catchAsync(async (req: Request, res: Response) =&gt; {
+    const tenantId = getTenantIdFromRequest(req);
     // req.body is validated CreateProductDto
-    const product = <span class="cstat-no" title="statement not covered" >await productService.createProduct(req.body, tenantId);</span>
-<span class="cstat-no" title="statement not covered" >    res.status(httpStatus.CREATED).send(product);</span>
+    const product = await productService.createProduct(req.body, tenantId);
+    res.status(httpStatus.CREATED).send(product);
 });
 &nbsp;
 const getProducts = catchAsync(<span class="fstat-no" title="function not covered" >async </span>(req: Request, res: Response) =&gt; {
@@ -383,15 +383,15 @@ const getProducts = catchAsync(<span class="fstat-no" title="function not covere
     });
 });
 &nbsp;
-const getProduct = catchAsync(<span class="fstat-no" title="function not covered" >async </span>(req: Request, res: Response) =&gt; {
-    const tenantId = <span class="cstat-no" title="statement not covered" >getTenantIdFromRequest(req);</span>
-    const productId = <span class="cstat-no" title="statement not covered" >req.params.productId;</span>
+const getProduct = catchAsync(async (req: Request, res: Response) =&gt; {
+    const tenantId = getTenantIdFromRequest(req);
+    const productId = req.params.productId;
 &nbsp;
-    const product = <span class="cstat-no" title="statement not covered" >await productService.getProductById(productId, tenantId);</span>
-<span class="cstat-no" title="statement not covered" >    <span class="missing-if-branch" title="if path not taken" >I</span>if (!product) {</span>
+    const product = await productService.getProductById(productId, tenantId);
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (!product) {
 <span class="cstat-no" title="statement not covered" >        throw new ApiError(httpStatus.NOT_FOUND, 'Product not found');</span>
     }
-<span class="cstat-no" title="statement not covered" >    res.status(httpStatus.OK).send(product);</span>
+    res.status(httpStatus.OK).send(product);
 });
 &nbsp;
 const updateProduct = catchAsync(<span class="fstat-no" title="function not covered" >async </span>(req: Request, res: Response) =&gt; {
@@ -433,7 +433,7 @@ export const productController = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-04T04:42:18.709Z
+                at 2025-12-04T05:26:11.906Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>

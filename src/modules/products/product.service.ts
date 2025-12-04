@@ -236,7 +236,16 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
             tenant: { connect: { id: tenantId } }
         };
 
-        const newProduct = await prisma.product.create({ data });
+        const newProduct = await prisma.product.create({
+            data,
+            include: {
+                categories: {
+                    include: {
+                        category: true
+                    }
+                }
+            }
+        });
 
         logContext.productId = newProduct.id;
         logger.info(`Product created successfully`, logContext);
@@ -295,7 +304,19 @@ const queryProducts = async (
     // 2. Fetch from database if cache miss or error
     try {
         const [products, totalResults] = await prisma.$transaction([
-            prisma.product.findMany({ where: filter, orderBy, skip, take: limit }),
+            prisma.product.findMany({
+                where: filter,
+                orderBy,
+                skip,
+                take: limit,
+                include: {
+                    categories: {
+                        include: {
+                            category: true
+                        }
+                    }
+                }
+            }),
             prisma.product.count({ where: filter }),
         ]);
         const result = { products: products as SafeProduct[], totalResults };
@@ -343,6 +364,13 @@ const getProductById = async (productId: string, tenantId: string): Promise<Safe
     try {
         const product = await prisma.product.findUnique({
             where: { id: productId }, // Find by primary key
+            include: {
+                categories: {
+                    include: {
+                        category: true
+                    }
+                }
+            }
         });
 
         // 3. Verify Tenant ID *after* fetching
