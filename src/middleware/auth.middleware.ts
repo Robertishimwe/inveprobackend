@@ -8,29 +8,30 @@ import { User, Role, Permission, RolePermission } from '@prisma/client'; // Impo
 
 // Define the structure of the JWT payload
 interface AuthPayload extends JwtPayload {
-  userId: string;
-  tenantId: string; // Include tenantId in the token for security and efficiency
-  // Add other relevant info like session ID if needed
+    userId: string;
+    tenantId: string; // Include tenantId in the token for security and efficiency
+    // Add other relevant info like session ID if needed
 }
 
 // Extend Express Request type (ensure this matches src/types/express/index.d.ts)
 // Define a more specific type for the attached user object
 export interface AuthenticatedUser extends User {
-  roles: (Role & {
-      permissions: (RolePermission & {
-          permission: Permission;
-      })[];
-  })[];
-  // We'll compute effective permissions directly on the object
-  effectivePermissions: Set<string>;
+    roles: (Role & {
+        permissions: (RolePermission & {
+            permission: Permission;
+        })[];
+    })[];
+    // We'll compute effective permissions directly on the object
+    effectivePermissions: Set<string>;
+    allowedLocationIds: string[]; // IDs of locations the user can access, or ['*'] for global
 }
 
 declare global {
     namespace Express {
-      interface Request {
-        user?: AuthenticatedUser; // Use the detailed type
-        tenantId?: string; // Keep tenantId separate for clarity
-      }
+        interface Request {
+            user?: AuthenticatedUser; // Use the detailed type
+            tenantId?: string; // Keep tenantId separate for clarity
+        }
     }
 }
 
@@ -70,7 +71,8 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
                             }
                         }
                     }
-                }
+                },
+                locations: { select: { locationId: true } } // Fetch assigned location IDs
             }
         });
 
@@ -81,11 +83,24 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
         // --- Calculate Effective Permissions ---
         const effectivePermissions = new Set<string>();
+        let isAdmin = false;
+
         userWithRoles.roles.forEach(userRole => {
+            if (userRole.role.name === 'Super Admin' || userRole.role.name === 'Tenant Admin') {
+                isAdmin = true;
+            }
             userRole.role.permissions.forEach(rolePermission => {
                 effectivePermissions.add(rolePermission.permission.permissionKey);
             });
         });
+
+        // --- Calculate Allowed Locations ---
+        let allowedLocationIds: string[] = [];
+        if (isAdmin) {
+            allowedLocationIds = ['*'];
+        } else {
+            allowedLocationIds = userWithRoles.locations.map(ul => ul.locationId);
+        }
 
         // --- Attach to Request ---
         // Attach the enriched user object and tenantId separately
@@ -93,14 +108,15 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
             ...userWithRoles,
             roles: userWithRoles.roles.map(ur => ur.role), // Simplify roles structure attached
             effectivePermissions: effectivePermissions,
+            allowedLocationIds: allowedLocationIds
         } as AuthenticatedUser; // Cast to our specific type
 
         req.tenantId = payload.tenantId; // Attach tenantId from validated token
 
-        logger.debug(`User ${req.user.id} authenticated for tenant ${req.tenantId}`);
+        console.error(`[AuthMiddleware] User ${req.user.id} authenticated for tenant ${req.tenantId}. Locations: ${JSON.stringify(allowedLocationIds)}`);
         next();
 
-    } catch (error) {
+    } catch (error: any) {
         if (error instanceof jwt.TokenExpiredError) {
             return next(new ApiError(httpStatus.UNAUTHORIZED, 'Token expired'));
         }

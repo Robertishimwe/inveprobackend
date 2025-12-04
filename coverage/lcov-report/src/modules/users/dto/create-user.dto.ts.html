@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>8/8</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>8/8</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
@@ -115,8 +115,11 @@
 <a name='L50'></a><a href='#L50'>50</a>
 <a name='L51'></a><a href='#L51'>51</a>
 <a name='L52'></a><a href='#L52'>52</a>
-<a name='L53'></a><a href='#L53'>53</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">18x</span>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -129,104 +132,113 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">18x</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">18x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">18x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">18x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">18x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">18x</span>
+<span class="cline-any cline-yes">20x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">18x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// src/modules/users/dto/create-user.dto.ts
-import {
-    IsEmail,
-    IsNotEmpty,
-    IsString,
-    MinLength,
-    MaxLength,
-    IsOptional,
-    IsArray,
-    ArrayNotEmpty,
-    IsUUID,
-    Matches
-  } from 'class-validator';
-  
-  export class CreateUserDto {
-    @IsEmail({}, { message: 'Please provide a valid email address.' })
-    @IsNotEmpty({ message: 'Email cannot be empty.' })
-    @MaxLength(255)
-    email!: string; // Definite assignment assertion
-  
-    @IsString()
-    @IsNotEmpty({ message: 'Password cannot be empty.' })
-    @MinLength(8, { message: 'Password must be at least 8 characters long.' })
-    @MaxLength(100, { message: 'Password cannot be longer than 100 characters.' })
-    @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&amp;])[A-Za-z\d@$!%*?&amp;]+$/, {
-        message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&amp;).'
-    })
-    password!: string; // Definite assignment assertion
-  
-    @IsString()
-    @IsNotEmpty({ message: 'First name cannot be empty.' })
-    @MaxLength(100)
-    firstName!: string; // Definite assignment assertion
-  
-    @IsString()
-    @IsNotEmpty({ message: 'Last name cannot be empty.' })
-    @MaxLength(100)
-    lastName!: string; // Definite assignment assertion
-  
-    @IsString()
-    @IsOptional()
-    @MaxLength(50)
-    phoneNumber?: string;
-  
-    // Roles are typically assigned via UUIDs in the request
-    @IsArray()
-    @ArrayNotEmpty({ message: 'At least one role must be assigned.'})
-    @IsUUID('4', { each: true, message: 'Each role must be a valid UUID.' })
-    roleIds!: string[]; // Array of Role UUIDs
-  
-    // tenantId is added by the service/context, not expected in request body
-    // isActive defaults to true in the service/schema
-  }</pre></td></tr></table></pre>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import {
+  IsEmail,
+  IsNotEmpty,
+  IsString,
+  MinLength,
+  MaxLength,
+  IsOptional,
+  IsArray,
+  ArrayNotEmpty,
+  IsUUID,
+  Matches
+} from 'class-validator';
+&nbsp;
+export class CreateUserDto {
+  @IsEmail({}, { message: 'Please provide a valid email address.' })
+  @IsNotEmpty({ message: 'Email cannot be empty.' })
+  @MaxLength(255)
+  email!: string; // Definite assignment assertion
+&nbsp;
+  @IsString()
+  @IsNotEmpty({ message: 'Password cannot be empty.' })
+  @MinLength(8, { message: 'Password must be at least 8 characters long.' })
+  @MaxLength(100, { message: 'Password cannot be longer than 100 characters.' })
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&amp;])[A-Za-z\d@$!%*?&amp;]+$/, {
+    message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&amp;).'
+  })
+  password!: string; // Definite assignment assertion
+&nbsp;
+  @IsString()
+  @IsNotEmpty({ message: 'First name cannot be empty.' })
+  @MaxLength(100)
+  firstName!: string; // Definite assignment assertion
+&nbsp;
+  @IsString()
+  @IsNotEmpty({ message: 'Last name cannot be empty.' })
+  @MaxLength(100)
+  lastName!: string; // Definite assignment assertion
+&nbsp;
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  phoneNumber?: string;
+&nbsp;
+  // Roles are typically assigned via UUIDs in the request
+  @IsArray()
+  @ArrayNotEmpty({ message: 'At least one role must be assigned.' })
+  @IsUUID('4', { each: true, message: 'Each role must be a valid UUID.' })
+  roleIds!: string[]; // Array of Role UUIDs
+&nbsp;
+  @IsArray()
+  @IsOptional()
+  @IsUUID('4', { each: true, message: 'Each location must be a valid UUID.' })
+  locationIds?: string[]; // Optional: Assign user to specific locations
+&nbsp;
+  // tenantId is added by the service/context, not expected in request body
+  // isActive defaults to true in the service/schema
+}</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
             </div><!-- /wrapper -->
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-04T09:59:59.837Z
+                at 2025-12-04T15:15:12.910Z
             </div>
         <script src="../../../../prettify.js"></script>
         <script>

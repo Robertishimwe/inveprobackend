@@ -260,15 +260,24 @@ const createPurchaseOrder = async (data: CreatePurchaseOrderDto, tenantId: strin
 };
 
 /** Query Purchase Orders */
-const queryPurchaseOrders = async (filter: Prisma.PurchaseOrderWhereInput, orderBy: Prisma.PurchaseOrderOrderByWithRelationInput[], limit: number, page: number): Promise<{ pos: PurchaseOrderSummary[], totalResults: number }> => {
+const queryPurchaseOrders = async (
+    filter: Prisma.PurchaseOrderWhereInput,
+    orderBy: Prisma.PurchaseOrderOrderByWithRelationInput[],
+    limit: number,
+    page: number,
+    allowedLocationIds: string[] = []
+): Promise<{ pos: PurchaseOrderSummary[], totalResults: number }> => {
     const skip = (page - 1) * limit;
     const tenantIdForLog: string | undefined = typeof filter.tenantId === 'string' ? filter.tenantId : undefined;
     const logContext: LogContext = { function: 'queryPurchaseOrders', tenantId: tenantIdForLog, limit, page };
     if (!tenantIdForLog) { throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Tenant context missing.'); }
+
+    const locationFilter = allowedLocationIds.includes('*') ? {} : { locationId: { in: allowedLocationIds } };
+
     try {
         const [pos, totalResults] = await prisma.$transaction([
             prisma.purchaseOrder.findMany({
-                where: filter,
+                where: { ...filter, ...locationFilter },
                 include: { // Summary data for list view
                     supplier: { select: { id: true, name: true } },
                     location: { select: { id: true, name: true } },
@@ -277,7 +286,7 @@ const queryPurchaseOrders = async (filter: Prisma.PurchaseOrderWhereInput, order
                 },
                 orderBy, skip, take: limit,
             }),
-            prisma.purchaseOrder.count({ where: filter }),
+            prisma.purchaseOrder.count({ where: { ...filter, ...locationFilter } }),
         ]);
         logger.debug(`PO query successful, found ${pos.length} of ${totalResults}`, logContext);
         return { pos: pos as PurchaseOrderSummary[], totalResults };

@@ -100,7 +100,8 @@ const getPurchaseOrders = catchAsync(async (req: Request, res: Response) => {
     const page = parseInt(options.page as string) || 1;
 
     // Call the service with constructed filters and options
-    const result = await purchaseOrderService.queryPurchaseOrders(filter, orderBy, limit, page);
+    const allowedLocationIds = req.user?.allowedLocationIds || [];
+    const result = await purchaseOrderService.queryPurchaseOrders(filter, orderBy, limit, page, allowedLocationIds);
 
     // Format and send the paginated response
     res.status(httpStatus.OK).send({

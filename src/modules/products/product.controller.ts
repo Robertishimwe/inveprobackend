@@ -48,7 +48,7 @@ const getProducts = catchAsync(async (req: Request, res: Response) => {
         (options.sortBy as string).split(',').forEach(sortOption => {
             const [key, order] = sortOption.split(':');
             if (key && (order === 'asc' || order === 'desc')) {
-                 // Add more valid sort keys
+                // Add more valid sort keys
                 if (['sku', 'name', 'brand', 'productType', 'basePrice', 'costPrice', 'createdAt', 'updatedAt', 'isActive'].includes(key)) {
                     orderBy.push({ [key]: order });
                 }
@@ -64,7 +64,8 @@ const getProducts = catchAsync(async (req: Request, res: Response) => {
     const page = parseInt(options.page as string) || 1;
 
     // Call the service with constructed filters and options
-    const result = await productService.queryProducts(filter, orderBy, limit, page);
+    const allowedLocationIds = req.user?.allowedLocationIds || [];
+    const result = await productService.queryProducts(filter, orderBy, limit, page, allowedLocationIds);
 
     // Format and send the paginated response
     res.status(httpStatus.OK).send({
@@ -103,8 +104,8 @@ const deleteProduct = catchAsync(async (req: Request, res: Response) => {
     const tenantId = getTenantIdFromRequest(req);
     const productId = req.params.productId;
 
-     // Add permission checks here if needed
-     // Middleware `checkPermissions(['product:delete'])` handles the basic check
+    // Add permission checks here if needed
+    // Middleware `checkPermissions(['product:delete'])` handles the basic check
 
     await productService.deleteProductById(productId, tenantId);
     // Send 204 No Content on successful deletion

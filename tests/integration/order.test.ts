@@ -128,6 +128,14 @@ describe('Order Routes', () => {
         });
         locationId = location.id;
 
+        // 8.1 Assign User to Location
+        await prisma.userLocation.create({
+            data: {
+                userId: adminUser.id,
+                locationId: locationId
+            }
+        });
+
         // 9. Add Stock (InventoryItem)
         await prisma.inventoryItem.create({
             data: {

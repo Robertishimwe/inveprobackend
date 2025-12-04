@@ -4,6 +4,8 @@ import {
   IsOptional,
   IsBoolean,
   IsNotEmpty,
+  IsArray,
+  IsUUID,
 } from "class-validator";
 
 export class UpdateUserDto {
@@ -29,6 +31,11 @@ export class UpdateUserDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean; // Allow updating active status
+
+  @IsArray()
+  @IsOptional()
+  @IsUUID('4', { each: true, message: 'Each location must be a valid UUID.' })
+  locationIds?: string[]; // Optional: Update assigned locations
 }
 
 // // src/modules/users/dto/update-user.dto.ts

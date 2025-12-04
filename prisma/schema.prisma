@@ -293,6 +293,7 @@ model User {
   reviewedStockCounts    StockCount[]          @relation("ReviewedStockCounts")
   completedStockCounts   StockCount[]          @relation("CompletedStockCounts")
   countedStockCountItems StockCountItem[]      @relation("CountedStockCountItems")
+  locations              UserLocation[]        // Locations assigned to this user
 
   @@index([tenantId]) // Index nullable FK
   @@index([email])
@@ -351,6 +352,20 @@ model RolePermission {
   @@id([roleId, permissionId]) // Composite primary key
   @@index([permissionId])
   @@map("role_permissions")
+}
+
+// Join table for User <-> Location (Many-to-Many)
+model UserLocation {
+  userId     String   @map("user_id")
+  locationId String   @map("location_id")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, locationId])
+  @@index([locationId])
+  @@map("user_locations")
 }
 
 // --- Product & Catalog Models ---
@@ -500,6 +515,7 @@ model Location {
   returnRestockItems   ReturnItem[]           // Restock location
   returns              Return[]               // Location where return was processed
   stockCounts          StockCount[]
+  users                UserLocation[]         // Users assigned to this location
 
   @@unique([tenantId, name]) // Location name unique per tenant
   @@index([tenantId])

@@ -9,7 +9,7 @@ import ApiError from '@/utils/ApiError';
 import logger from '@/utils/logger';
 // import { CreateOrderDto, UpdateOrderDto } from './dto'; // Assuming DTOs are correct and imported
 import { CreateOrderDto } from './dto/create-order.dto';
-import {  UpdateOrderDto } from './dto/update-order.dto';
+import { UpdateOrderDto } from './dto/update-order.dto';
 
 // --- FIX: Import the stock movement helper ---
 // This assumes it's exported from inventory.service.ts. Adjust the path if necessary.
@@ -25,7 +25,7 @@ import { inventoryService } from '@/modules/inventory/inventory.service'; // Ass
 
 
 // Define log context type if not global
-type LogContext = { function?: string; tenantId?: string | null; orderId?: string | null; userId?: string | null; data?: any; error?: any; [key: string]: any; };
+type LogContext = { function?: string; tenantId?: string | null; orderId?: string | null; userId?: string | null; data?: any; error?: any;[key: string]: any; };
 
 // Type helpers for responses
 // Define explicitly which relations and fields are included for clarity
@@ -56,7 +56,7 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
     const logContext: LogContext = { function: 'createOrder', tenantId, userId, customerId: data.customerId, locationId: data.locationId };
 
     // 1. Validate Location
-    const location = await prisma.location.findFirst({ where: { id: data.locationId, tenantId }, select: { id: true, name: true }});
+    const location = await prisma.location.findFirst({ where: { id: data.locationId, tenantId }, select: { id: true, name: true } });
     if (!location) throw new ApiError(httpStatus.BAD_REQUEST, `Location with ID ${data.locationId} not found.`);
 
     // 2. Validate Customer (if provided)
@@ -90,7 +90,7 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
         if (!product) continue;
 
         const requestedQuantity = new Prisma.Decimal(itemDto.quantity);
-        if(requestedQuantity.lessThanOrEqualTo(0)) {
+        if (requestedQuantity.lessThanOrEqualTo(0)) {
             throw new ApiError(httpStatus.BAD_REQUEST, `Quantity for product ${product.sku} must be positive.`);
         }
 
@@ -123,15 +123,15 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
             if (availableQuantity.lessThan(requestedQuantity)) {
                 const allowBackorder = false; // TODO: Get from config
                 if (!allowBackorder) {
-                     throw new ApiError(httpStatus.BAD_REQUEST, `Insufficient stock for product ${product.sku}. Available: ${availableQuantity}, Requested: ${requestedQuantity}`);
+                    throw new ApiError(httpStatus.BAD_REQUEST, `Insufficient stock for product ${product.sku}. Available: ${availableQuantity}, Requested: ${requestedQuantity}`);
                 } else {
-                     logContext.backorderedProduct = product.sku;
-                     logger.warn(`Product ${product.sku} is backordered`, logContext);
-                     needsBackorder = true;
+                    logContext.backorderedProduct = product.sku;
+                    logger.warn(`Product ${product.sku} is backordered`, logContext);
+                    needsBackorder = true;
                 }
             }
         } else {
-             stockChecks.push({ productId: product.id, requested: requestedQuantity, available: new Prisma.Decimal(Infinity), isTracked: false, sku: product.sku });
+            stockChecks.push({ productId: product.id, requested: requestedQuantity, available: new Prisma.Decimal(Infinity), isTracked: false, sku: product.sku });
         }
     }
 
@@ -164,7 +164,7 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
                     customer: { select: { id: true, firstName: true, lastName: true, email: true } },
                     location: { select: { id: true, name: true } },
                     user: { select: { id: true, firstName: true, lastName: true } },
-                    items: { include: { product: { select: { id: true, sku: true, name: true }}}}
+                    items: { include: { product: { select: { id: true, sku: true, name: true } } } }
                 }
             });
             logContext.orderId = order.id; logContext.orderNumber = order.orderNumber;
@@ -198,7 +198,7 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
         // Add necessary includes again if $transaction doesn't preserve them for the final return type
         // Or fetch again after transaction (less ideal)
         const finalOrder = await getOrderById(createdOrder.id, tenantId); // Fetch again with full details
-         if (!finalOrder) throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve created order details.');
+        if (!finalOrder) throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve created order details.');
 
         return finalOrder; // Return the fully detailed order
 
@@ -216,17 +216,20 @@ const queryOrders = async (
     filter: Prisma.OrderWhereInput,
     orderBy: Prisma.OrderOrderByWithRelationInput[],
     limit: number,
-    page: number
+    page: number,
+    allowedLocationIds: string[] = []
 ): Promise<{ orders: OrderWithDetails[], totalResults: number }> => {
     const skip = (page - 1) * limit;
     const tenantIdForLog: string | undefined = typeof filter.tenantId === 'string' ? filter.tenantId : undefined;
     const logContext: LogContext = { function: 'queryOrders', tenantId: tenantIdForLog, limit, page };
     if (!tenantIdForLog) { throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Tenant context missing.'); }
 
+    const locationFilter = allowedLocationIds.includes('*') ? {} : { locationId: { in: allowedLocationIds } };
+
     try {
         const [orders, totalResults] = await prisma.$transaction([
             prisma.order.findMany({
-                where: filter,
+                where: { ...filter, ...locationFilter },
                 include: { // Include necessary details for the list view (matches OrderWithDetails partially)
                     customer: { select: { id: true, firstName: true, lastName: true, email: true } },
                     location: { select: { id: true, name: true } },
@@ -236,7 +239,7 @@ const queryOrders = async (
                 },
                 orderBy, skip, take: limit,
             }),
-            prisma.order.count({ where: filter }),
+            prisma.order.count({ where: { ...filter, ...locationFilter } }),
         ]);
         logger.debug(`Order query successful, found ${orders.length} of ${totalResults}`, logContext);
         // Cast is needed here as the include shape might differ slightly from OrderWithDetails definition
@@ -280,15 +283,15 @@ const updateOrderById = async (orderId: string, updateData: UpdateOrderDto, tena
     const logContext: LogContext = { function: 'updateOrderById', orderId, tenantId, userId, data: updateData };
 
     // 1. Get current order state
-     const existingOrder = await prisma.order.findFirst({
-         where: { id: orderId, tenantId },
-         select: { id: true, status: true, notes: true, orderNumber: true } // Fetch fields needed for logic/logging
-     });
+    const existingOrder = await prisma.order.findFirst({
+        where: { id: orderId, tenantId },
+        select: { id: true, status: true, notes: true, orderNumber: true } // Fetch fields needed for logic/logging
+    });
     if (!existingOrder) { throw new ApiError(httpStatus.NOT_FOUND, 'Order not found.'); }
 
     // Basic state transition validation
     if (updateData.status && (existingOrder.status === OrderStatus.COMPLETED || existingOrder.status === OrderStatus.CANCELLED)) {
-         throw new ApiError(httpStatus.BAD_REQUEST, `Cannot update status of a ${existingOrder.status} order.`);
+        throw new ApiError(httpStatus.BAD_REQUEST, `Cannot update status of a ${existingOrder.status} order.`);
     }
 
     // 2. Prepare update payload
@@ -302,10 +305,10 @@ const updateOrderById = async (orderId: string, updateData: UpdateOrderDto, tena
     }
 
     if (Object.keys(dataToUpdate).length === 0) {
-         logger.info(`Order update skipped: No changes provided`, logContext);
-         const currentOrder = await getOrderById(orderId, tenantId); // Re-fetch full details
-         if(!currentOrder) throw new ApiError(httpStatus.NOT_FOUND, 'Order not found after update check.');
-         return currentOrder;
+        logger.info(`Order update skipped: No changes provided`, logContext);
+        const currentOrder = await getOrderById(orderId, tenantId); // Re-fetch full details
+        if (!currentOrder) throw new ApiError(httpStatus.NOT_FOUND, 'Order not found after update check.');
+        return currentOrder;
     }
 
     // 3. Perform Update
@@ -314,12 +317,12 @@ const updateOrderById = async (orderId: string, updateData: UpdateOrderDto, tena
             where: { id: orderId }, // Tenant verified by initial fetch
             data: dataToUpdate,
             include: { // Include full details for response consistent with OrderWithDetails
-                 customer: { select: { id: true, firstName: true, lastName: true, email: true } },
-                 location: { select: { id: true, name: true } },
-                 user: { select: { id: true, firstName: true, lastName: true } },
-                 items: { include: { product: { select: { id: true, sku: true, name: true } } } },
-                 payments: true,
-                 initiatedReturns: { where: { originalOrderId: orderId } }
+                customer: { select: { id: true, firstName: true, lastName: true, email: true } },
+                location: { select: { id: true, name: true } },
+                user: { select: { id: true, firstName: true, lastName: true } },
+                items: { include: { product: { select: { id: true, sku: true, name: true } } } },
+                payments: true,
+                initiatedReturns: { where: { originalOrderId: orderId } }
             }
         });
         logger.info(`Order ${existingOrder.orderNumber} updated successfully (New Status: ${updatedOrder.status})`, logContext);
@@ -329,8 +332,8 @@ const updateOrderById = async (orderId: string, updateData: UpdateOrderDto, tena
         logContext.error = error;
         logger.error(`Error updating order`, logContext);
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             throw new ApiError(httpStatus.NOT_FOUND, 'Order not found during update attempt.');
-         }
+            throw new ApiError(httpStatus.NOT_FOUND, 'Order not found during update attempt.');
+        }
         // --- FIX: Ensure error is always thrown ---
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update order.');
     }
@@ -339,83 +342,83 @@ const updateOrderById = async (orderId: string, updateData: UpdateOrderDto, tena
 
 /** Cancel an Order (Soft Delete) */
 const cancelOrderById = async (orderId: string, tenantId: string, userId: string, reason: string = "Cancelled by user"): Promise<OrderWithDetails> => {
-     const logContext: LogContext = { function: 'cancelOrderById', orderId, tenantId, userId, reason };
+    const logContext: LogContext = { function: 'cancelOrderById', orderId, tenantId, userId, reason };
 
-     // 1. Get current order state
-     const existingOrder = await prisma.order.findFirst({
-         where: { id: orderId, tenantId },
-         select: { id: true, status: true, orderNumber: true, notes: true }
-     });
-     if (!existingOrder) { throw new ApiError(httpStatus.NOT_FOUND, 'Order not found.'); }
+    // 1. Get current order state
+    const existingOrder = await prisma.order.findFirst({
+        where: { id: orderId, tenantId },
+        select: { id: true, status: true, orderNumber: true, notes: true }
+    });
+    if (!existingOrder) { throw new ApiError(httpStatus.NOT_FOUND, 'Order not found.'); }
 
-     // 2. Check if cancellable
-     // --- FIX: Use correct array includes check ---
-     const nonCancellableStatuses: OrderStatus[] = [OrderStatus.SHIPPED, OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.RETURNED];
-     if (nonCancellableStatuses.includes(existingOrder.status)) {
-     // ---------------------------------------------
-         throw new ApiError(httpStatus.BAD_REQUEST, `Cannot cancel an order with status ${existingOrder.status}.`);
-     }
+    // 2. Check if cancellable
+    // --- FIX: Use correct array includes check ---
+    const nonCancellableStatuses: OrderStatus[] = [OrderStatus.SHIPPED, OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.RETURNED];
+    if (nonCancellableStatuses.includes(existingOrder.status)) {
+        // ---------------------------------------------
+        throw new ApiError(httpStatus.BAD_REQUEST, `Cannot cancel an order with status ${existingOrder.status}.`);
+    }
 
-     // 3. Use Transaction to update status and reverse stock allocation
-     try {
-         const cancelledOrder = await prisma.$transaction(async (tx) => {
-             const updatedOrder = await tx.order.update({
-                 where: { id: orderId },
-                 data: {
-                     status: OrderStatus.CANCELLED,
-                     notes: `${existingOrder.notes ? existingOrder.notes + '\n' : ''}Cancelled: ${reason}`
-                 },
-                  include: { // Include details for response
-                     customer: { select: { id: true, firstName: true, lastName: true, email: true } },
-                     location: { select: { id: true, name: true } },
-                     user: { select: { id: true, firstName: true, lastName: true } },
-                     items: { include: { product: { select: { id: true, sku: true, name: true } } } }
-                 }
-             });
+    // 3. Use Transaction to update status and reverse stock allocation
+    try {
+        const cancelledOrder = await prisma.$transaction(async (tx) => {
+            const updatedOrder = await tx.order.update({
+                where: { id: orderId },
+                data: {
+                    status: OrderStatus.CANCELLED,
+                    notes: `${existingOrder.notes ? existingOrder.notes + '\n' : ''}Cancelled: ${reason}`
+                },
+                include: { // Include details for response
+                    customer: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    location: { select: { id: true, name: true } },
+                    user: { select: { id: true, firstName: true, lastName: true } },
+                    items: { include: { product: { select: { id: true, sku: true, name: true } } } }
+                }
+            });
 
-             // Reverse stock movements only if allocation likely happened
-             const allocatedStatuses: OrderStatus[] = [OrderStatus.PROCESSING /* Add others like PARTIALLY_SHIPPED? */];
-             if (allocatedStatuses.includes(existingOrder.status)) {
-                 const saleTransactions = await tx.inventoryTransaction.findMany({
-                     where: { relatedOrderId: orderId, transactionType: InventoryTransactionType.SALE }
-                 });
+            // Reverse stock movements only if allocation likely happened
+            const allocatedStatuses: OrderStatus[] = [OrderStatus.PROCESSING /* Add others like PARTIALLY_SHIPPED? */];
+            if (allocatedStatuses.includes(existingOrder.status)) {
+                const saleTransactions = await tx.inventoryTransaction.findMany({
+                    where: { relatedOrderId: orderId, transactionType: InventoryTransactionType.SALE }
+                });
 
-                 if (saleTransactions.length > 0) {
-                     for(const saleTx of saleTransactions) {
-                          await inventoryService._recordStockMovement(
-                             tx, tenantId, userId, saleTx.productId, saleTx.locationId,
-                             saleTx.quantityChange.negated(), // Reverse the change
-                             InventoryTransactionType.RETURN_RESTOCK,
-                             null,
-                             { orderId: orderId, orderItemId: saleTx.relatedOrderItemId },
-                             `Stock returned from cancelled order ${existingOrder.orderNumber}`,
-                             saleTx.lotNumber,
-                             saleTx.serialNumber
-                         );
-                     }
-                      logger.info(`Reversed ${saleTransactions.length} stock allocation(s) for cancelled order ${existingOrder.orderNumber}`, logContext);
-                 } else {
-                      logger.warn(`Order ${existingOrder.orderNumber} was in state ${existingOrder.status} but no SALE transactions found to reverse.`, logContext);
-                 }
-             } else {
-                 logger.info(`Order ${existingOrder.orderNumber} cancelled from status ${existingOrder.status}, stock reversal not applicable.`, logContext);
-             }
+                if (saleTransactions.length > 0) {
+                    for (const saleTx of saleTransactions) {
+                        await inventoryService._recordStockMovement(
+                            tx, tenantId, userId, saleTx.productId, saleTx.locationId,
+                            saleTx.quantityChange.negated(), // Reverse the change
+                            InventoryTransactionType.RETURN_RESTOCK,
+                            null,
+                            { orderId: orderId, orderItemId: saleTx.relatedOrderItemId },
+                            `Stock returned from cancelled order ${existingOrder.orderNumber}`,
+                            saleTx.lotNumber,
+                            saleTx.serialNumber
+                        );
+                    }
+                    logger.info(`Reversed ${saleTransactions.length} stock allocation(s) for cancelled order ${existingOrder.orderNumber}`, logContext);
+                } else {
+                    logger.warn(`Order ${existingOrder.orderNumber} was in state ${existingOrder.status} but no SALE transactions found to reverse.`, logContext);
+                }
+            } else {
+                logger.info(`Order ${existingOrder.orderNumber} cancelled from status ${existingOrder.status}, stock reversal not applicable.`, logContext);
+            }
 
-             return updatedOrder;
-         });
-          logger.info(`Order ${existingOrder.orderNumber} cancelled successfully`, logContext);
-          // Fetch again with full includes if transaction doesn't return everything needed for OrderWithDetails
-          const finalOrder = await getOrderById(cancelledOrder.id, tenantId);
-          if (!finalOrder) throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve cancelled order details.');
-          return finalOrder;
-     } catch (error: any) {
-         if (error instanceof ApiError) throw error;
-         logContext.error = error;
-         logger.error(`Error cancelling order`, logContext);
-         // --- FIX: Ensure error is always thrown ---
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to cancel order.');
-     }
-     // Unreachable
+            return updatedOrder;
+        });
+        logger.info(`Order ${existingOrder.orderNumber} cancelled successfully`, logContext);
+        // Fetch again with full includes if transaction doesn't return everything needed for OrderWithDetails
+        const finalOrder = await getOrderById(cancelledOrder.id, tenantId);
+        if (!finalOrder) throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve cancelled order details.');
+        return finalOrder;
+    } catch (error: any) {
+        if (error instanceof ApiError) throw error;
+        logContext.error = error;
+        logger.error(`Error cancelling order`, logContext);
+        // --- FIX: Ensure error is always thrown ---
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to cancel order.');
+    }
+    // Unreachable
 };
 
 

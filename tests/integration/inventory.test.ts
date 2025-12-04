@@ -84,6 +84,8 @@ describe('Inventory Routes', () => {
             },
         });
 
+
+
         // 7. Generate Access Token
         const payload = {
             userId: adminUser.id,
@@ -121,6 +123,14 @@ describe('Inventory Routes', () => {
             },
         });
         destinationLocationId = loc2.id;
+
+        // 9.1 Assign User to Locations (Moved here to ensure loc1/loc2 exist)
+        await prisma.userLocation.createMany({
+            data: [
+                { userId: adminUser.id, locationId: loc1.id },
+                { userId: adminUser.id, locationId: loc2.id }
+            ]
+        });
     });
 
     afterAll(async () => {

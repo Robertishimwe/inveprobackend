@@ -683,7 +683,8 @@ const queryAdjustments = async (
   filter: Prisma.InventoryAdjustmentWhereInput,
   orderBy: Prisma.InventoryAdjustmentOrderByWithRelationInput[],
   limit: number,
-  page: number
+  page: number,
+  allowedLocationIds: string[] = []
 ): Promise<{ adjustments: InventoryAdjustment[]; totalResults: number }> => {
   const skip = (page - 1) * limit;
   const tenantIdForLog: string | undefined =
@@ -704,7 +705,10 @@ const queryAdjustments = async (
   try {
     const [adjustments, totalResults] = await prisma.$transaction([
       prisma.inventoryAdjustment.findMany({
-        where: filter,
+        where: {
+          ...filter,
+          ...(allowedLocationIds.includes('*') ? {} : { locationId: { in: allowedLocationIds } })
+        },
         include: {
           location: { select: { id: true, name: true } },
           createdByUser: {
@@ -716,7 +720,12 @@ const queryAdjustments = async (
         skip,
         take: limit,
       }),
-      prisma.inventoryAdjustment.count({ where: filter }),
+      prisma.inventoryAdjustment.count({
+        where: {
+          ...filter,
+          ...(allowedLocationIds.includes('*') ? {} : { locationId: { in: allowedLocationIds } })
+        }
+      }),
     ]);
     logger.debug(
       `Adjustment query successful, found ${adjustments.length} of ${totalResults}`,
@@ -790,7 +799,8 @@ const queryTransfers = async (
   filter: Prisma.InventoryTransferWhereInput,
   orderBy: Prisma.InventoryTransferOrderByWithRelationInput[],
   limit: number,
-  page: number
+  page: number,
+  allowedLocationIds: string[] = []
 ): Promise<{ transfers: InventoryTransfer[]; totalResults: number }> => {
   const skip = (page - 1) * limit;
   const tenantIdForLog: string | undefined =
@@ -811,7 +821,15 @@ const queryTransfers = async (
   try {
     const [transfers, totalResults] = await prisma.$transaction([
       prisma.inventoryTransfer.findMany({
-        where: filter,
+        where: {
+          ...filter,
+          ...(allowedLocationIds.includes('*') ? {} : {
+            OR: [
+              { sourceLocationId: { in: allowedLocationIds } },
+              { destinationLocationId: { in: allowedLocationIds } }
+            ]
+          })
+        },
         include: {
           sourceLocation: { select: { id: true, name: true } },
           destinationLocation: { select: { id: true, name: true } },
@@ -824,7 +842,17 @@ const queryTransfers = async (
         skip,
         take: limit,
       }),
-      prisma.inventoryTransfer.count({ where: filter }),
+      prisma.inventoryTransfer.count({
+        where: {
+          ...filter,
+          ...(allowedLocationIds.includes('*') ? {} : {
+            OR: [
+              { sourceLocationId: { in: allowedLocationIds } },
+              { destinationLocationId: { in: allowedLocationIds } }
+            ]
+          })
+        }
+      }),
     ]);
     logger.debug(
       `Transfer query successful, found ${transfers.length} of ${totalResults}`,
@@ -899,7 +927,8 @@ const queryInventoryItems = async (
   filter: Prisma.InventoryItemWhereInput,
   orderBy: Prisma.InventoryItemOrderByWithRelationInput[],
   limit: number,
-  page: number
+  page: number,
+  allowedLocationIds: string[] = []
 ): Promise<{
   items: (InventoryItem & {
     product: Pick<Product, "id" | "sku" | "name" | "basePrice">; // Added basePrice
@@ -926,7 +955,10 @@ const queryInventoryItems = async (
   try {
     const [items, totalResults] = await prisma.$transaction([
       prisma.inventoryItem.findMany({
-        where: filter, // Pass original filter to Prisma
+        where: {
+          ...filter,
+          ...(allowedLocationIds.includes('*') ? {} : { locationId: { in: allowedLocationIds } })
+        },
         include: {
           product: { select: { id: true, sku: true, name: true, basePrice: true } }, // Added basePrice
           location: { select: { id: true, name: true } },
@@ -935,7 +967,12 @@ const queryInventoryItems = async (
         skip,
         take: limit,
       }),
-      prisma.inventoryItem.count({ where: filter }),
+      prisma.inventoryItem.count({
+        where: {
+          ...filter,
+          ...(allowedLocationIds.includes('*') ? {} : { locationId: { in: allowedLocationIds } })
+        }
+      }),
     ]);
     logger.debug(
       `Inventory item query successful, found ${items.length} of ${totalResults}`,

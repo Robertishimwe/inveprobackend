@@ -49,22 +49,22 @@ const getOrders = catchAsync(async (req: Request, res: Response) => {
     if (filterParams.userId) filter.userId = filterParams.userId as string;
     // Validate status against enum values
     if (filterParams.status && Object.values(OrderStatus).includes(filterParams.status as OrderStatus)) {
-         filter.status = { equals: filterParams.status as OrderStatus };
+        filter.status = { equals: filterParams.status as OrderStatus };
     } else if (filterParams.status) {
-         throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(OrderStatus).join(', ')}`);
+        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(OrderStatus).join(', ')}`);
     }
     if (filterParams.orderType) filter.orderType = { equals: filterParams.orderType as any }; // Cast if needed for enum
     if (filterParams.orderNumber) filter.orderNumber = { contains: filterParams.orderNumber as string, mode: 'insensitive' };
     if (filterParams.isBackordered !== undefined) filter.isBackordered = filterParams.isBackordered === 'true';
 
     // Date filtering for orderDate
-     if (filterParams.dateFrom || filterParams.dateTo) {
+    if (filterParams.dateFrom || filterParams.dateTo) {
         filter.orderDate = {};
-         try {
+        try {
             if (filterParams.dateFrom) filter.orderDate.gte = new Date(filterParams.dateFrom as string);
             if (filterParams.dateTo) filter.orderDate.lte = new Date(filterParams.dateTo as string);
         } catch (e) {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for dateFrom or dateTo. Use ISO 8601 format.');
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for dateFrom or dateTo. Use ISO 8601 format.');
         }
     }
 
@@ -93,7 +93,8 @@ const getOrders = catchAsync(async (req: Request, res: Response) => {
     const page = parseInt(options.page as string) || 1;
 
     // Call the service with constructed filters and options
-    const result = await orderService.queryOrders(filter, orderBy, limit, page);
+    const allowedLocationIds = req.user?.allowedLocationIds || [];
+    const result = await orderService.queryOrders(filter, orderBy, limit, page, allowedLocationIds);
 
     // Format and send the paginated response
     res.status(httpStatus.OK).send({

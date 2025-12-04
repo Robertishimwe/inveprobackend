@@ -128,6 +128,14 @@ describe('Purchase Order Routes', () => {
             },
         });
         locationId = location.id;
+
+        // 8.1 Assign User to Location
+        await prisma.userLocation.create({
+            data: {
+                userId: adminUser.id,
+                locationId: locationId
+            }
+        });
     });
 
     afterAll(async () => {

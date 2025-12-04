@@ -89,41 +89,6 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
         throw new ApiError(httpStatus.CONFLICT, `Product with SKU '${productData.sku}' already exists.`);
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     // 2. Validate Category IDs if provided
     let categoryConnectOrCreate: Prisma.ProductCategoryCreateNestedManyWithoutProductInput | undefined = undefined;
     if (productData.categoryIds && productData.categoryIds.length > 0) {
@@ -144,52 +109,6 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
         };
         logContext.categoriesAssigned = productData.categoryIds;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     // 2. Prepare data, parse JSON, handle dimensions
     let parsedCustomAttributes: Prisma.InputJsonValue | undefined = undefined;
@@ -265,23 +184,22 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
     }
 };
 
-
 /**
- * Query for products with pagination, filtering, sorting, and caching.
+ * Query products with filtering and pagination.
  */
 const queryProducts = async (
-    filter: Prisma.ProductWhereInput,
-    orderBy: Prisma.ProductOrderByWithRelationInput[],
+    filter: any,
+    orderBy: any,
     limit: number,
-    page: number
+    page: number,
+    allowedLocationIds: string[] = []
 ): Promise<{ products: SafeProduct[]; totalResults: number }> => {
+    const tenantId = filter.tenantId;
     const skip = (page - 1) * limit;
-    const tenantId = filter.tenantId as string; // Assume tenantId is always present from controller
-    const queryParams = { filter, orderBy, limit, page }; // Use full objects for key generation
-    const cacheKey = generateProductListCacheKey(tenantId, queryParams);
-    const logContext: LogContext = { function: 'queryProducts', cacheKey, tenantId, limit, page };
+    const cacheKey = generateProductListCacheKey(tenantId, { ...filter, ...orderBy, limit, page, allowedLocationIds });
+    const logContext: LogContext = { function: 'queryProducts', tenantId, filter, orderBy, limit, page, allowedLocationIds };
 
-    // 1. Try cache first
+    // 1. Try cache
     try {
         const cachedData = await redisClient.get(cacheKey);
         if (cachedData) {
@@ -313,6 +231,15 @@ const queryProducts = async (
                     categories: {
                         include: {
                             category: true
+                        }
+                    },
+                    inventoryItems: {
+                        where: allowedLocationIds.includes('*') ? undefined : { locationId: { in: allowedLocationIds } },
+                        select: {
+                            locationId: true,
+                            quantityOnHand: true,
+                            quantityAllocated: true,
+                            quantityIncoming: true
                         }
                     }
                 }
@@ -522,18 +449,15 @@ const updateProductById = async (
     }
 };
 
-
-/**
- * Delete a product by ID, ensuring tenant isolation and checking dependencies.
- */
 const deleteProductById = async (productId: string, tenantId: string): Promise<void> => {
     const logContext: LogContext = { function: 'deleteProductById', productId, tenantId };
 
-    // 1. Check if product exists within tenant & get SKU using findFirst
+    // 1. Verify product exists within the tenant
     const product = await prisma.product.findFirst({
         where: { id: productId, tenantId: tenantId },
         select: { id: true, sku: true }
     });
+
     if (!product) {
         logger.warn(`Delete failed: Product not found or tenant mismatch`, logContext);
         throw new ApiError(httpStatus.NOT_FOUND, 'Product not found.');

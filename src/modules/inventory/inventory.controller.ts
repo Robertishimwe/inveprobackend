@@ -44,13 +44,13 @@ const getAdjustments = catchAsync(async (req: Request, res: Response) => {
             if (filterParams.dateFrom) filter.adjustmentDate.gte = new Date(filterParams.dateFrom as string);
             if (filterParams.dateTo) filter.adjustmentDate.lte = new Date(filterParams.dateTo as string);
         } catch (e) {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for dateFrom or dateTo. Use ISO 8601 format.');
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for dateFrom or dateTo. Use ISO 8601 format.');
         }
     }
 
     // Build Prisma OrderBy array
     const orderBy: Prisma.InventoryAdjustmentOrderByWithRelationInput[] = [];
-     if (options.sortBy) {
+    if (options.sortBy) {
         (options.sortBy as string).split(',').forEach(sortOption => {
             const [key, order] = sortOption.split(':');
             if (key && (order === 'asc' || order === 'desc')) {
@@ -68,7 +68,8 @@ const getAdjustments = catchAsync(async (req: Request, res: Response) => {
     const page = parseInt(options.page as string) || 1;
 
     // Call the service
-    const result = await inventoryService.queryAdjustments(filter, orderBy, limit, page);
+    const allowedLocationIds = req.user?.allowedLocationIds || [];
+    const result = await inventoryService.queryAdjustments(filter, orderBy, limit, page, allowedLocationIds);
 
     // Format and send the paginated response
     res.status(httpStatus.OK).send({
@@ -127,19 +128,19 @@ const getTransfers = catchAsync(async (req: Request, res: Response) => {
     if (filterParams.destinationLocationId) filter.destinationLocationId = filterParams.destinationLocationId as string;
     // Validate status against enum values
     if (filterParams.status && Object.values(TransferStatus).includes(filterParams.status as TransferStatus)) {
-         filter.status = { equals: filterParams.status as TransferStatus };
+        filter.status = { equals: filterParams.status as TransferStatus };
     } else if (filterParams.status) {
-         throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(TransferStatus).join(', ')}`);
+        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(TransferStatus).join(', ')}`);
     }
     if (filterParams.userId) filter.createdByUserId = filterParams.userId as string;
     // Date filtering for transferDate
-     if (filterParams.dateFrom || filterParams.dateTo) {
+    if (filterParams.dateFrom || filterParams.dateTo) {
         filter.transferDate = {};
-         try {
+        try {
             if (filterParams.dateFrom) filter.transferDate.gte = new Date(filterParams.dateFrom as string);
             if (filterParams.dateTo) filter.transferDate.lte = new Date(filterParams.dateTo as string);
         } catch (e) {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for dateFrom or dateTo. Use ISO 8601 format.');
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for dateFrom or dateTo. Use ISO 8601 format.');
         }
     }
 
@@ -155,14 +156,15 @@ const getTransfers = catchAsync(async (req: Request, res: Response) => {
             }
         });
     }
-     if (orderBy.length === 0) { orderBy.push({ createdAt: 'desc' }); } // Default sort
+    if (orderBy.length === 0) { orderBy.push({ createdAt: 'desc' }); } // Default sort
 
     // Pagination
     const limit = parseInt(options.limit as string) || 10;
     const page = parseInt(options.page as string) || 1;
 
     // Call service
-    const result = await inventoryService.queryTransfers(filter, orderBy, limit, page);
+    const allowedLocationIds = req.user?.allowedLocationIds || [];
+    const result = await inventoryService.queryTransfers(filter, orderBy, limit, page, allowedLocationIds);
     res.status(httpStatus.OK).send({
         results: result.transfers,
         page: page, limit: limit, totalPages: Math.ceil(result.totalResults / limit), totalResults: result.totalResults,
@@ -201,17 +203,17 @@ const getInventoryItems = catchAsync(async (req: Request, res: Response) => {
             quantityFilter.lte = lteValue;
             hasQuantityFilter = true;
         } catch {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid number format for quantityLte.');
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid number format for quantityLte.');
         }
     }
-     if (filterParams.quantityGte !== undefined) {
+    if (filterParams.quantityGte !== undefined) {
         try {
             const gteValue = new Prisma.Decimal(filterParams.quantityGte as string);
-             // Add or update the 'gte' property
+            // Add or update the 'gte' property
             quantityFilter.gte = gteValue;
             hasQuantityFilter = true;
         } catch {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid number format for quantityGte.');
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid number format for quantityGte.');
         }
     }
 
@@ -224,30 +226,31 @@ const getInventoryItems = catchAsync(async (req: Request, res: Response) => {
     // Build Prisma OrderBy
     const orderBy: Prisma.InventoryItemOrderByWithRelationInput[] = [];
     if (options.sortBy) {
-         (options.sortBy as string).split(',').forEach(sortOption => {
+        (options.sortBy as string).split(',').forEach(sortOption => {
             const [key, order] = sortOption.split(':');
             if (key && (order === 'asc' || order === 'desc')) {
                 // Define sortable fields
                 if (['quantityOnHand', 'quantityAllocated', 'quantityIncoming', 'updatedAt', 'averageCost'].includes(key)) {
                     orderBy.push({ [key]: order });
                 } else if (key === 'productName') {
-                     orderBy.push({ product: { name: order } });
-                 } else if (key === 'productSku') {
-                     orderBy.push({ product: { sku: order } });
-                 } else if (key === 'locationName') {
-                     orderBy.push({ location: { name: order } });
-                 }
+                    orderBy.push({ product: { name: order } });
+                } else if (key === 'productSku') {
+                    orderBy.push({ product: { sku: order } });
+                } else if (key === 'locationName') {
+                    orderBy.push({ location: { name: order } });
+                }
             }
         });
     }
-    if (orderBy.length === 0) { orderBy.push({ product: { name: 'asc' } }, { location: { name: 'asc' }}); } // Default sort
+    if (orderBy.length === 0) { orderBy.push({ product: { name: 'asc' } }, { location: { name: 'asc' } }); } // Default sort
 
     // Pagination
     const limit = parseInt(options.limit as string) || 10;
     const page = parseInt(options.page as string) || 1;
 
     // Call service
-    const result = await inventoryService.queryInventoryItems(filter, orderBy, limit, page);
+    const allowedLocationIds = req.user?.allowedLocationIds || [];
+    const result = await inventoryService.queryInventoryItems(filter, orderBy, limit, page, allowedLocationIds);
     res.status(httpStatus.OK).send({
         results: result.items,
         page: page, limit: limit, totalPages: Math.ceil(result.totalResults / limit), totalResults: result.totalResults,
@@ -255,10 +258,10 @@ const getInventoryItems = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getInventoryItem = catchAsync(async (req: Request, res: Response) => {
-     const tenantId = getTenantIdFromRequest(req);
-     const item = await inventoryService.getInventoryItemById(req.params.itemId, tenantId);
-     if (!item) { throw new ApiError(httpStatus.NOT_FOUND, 'Inventory item record not found'); }
-     res.status(httpStatus.OK).send(item);
+    const tenantId = getTenantIdFromRequest(req);
+    const item = await inventoryService.getInventoryItemById(req.params.itemId, tenantId);
+    if (!item) { throw new ApiError(httpStatus.NOT_FOUND, 'Inventory item record not found'); }
+    res.status(httpStatus.OK).send(item);
 });
 
 
