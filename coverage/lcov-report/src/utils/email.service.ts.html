@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">30.76% </span>
+                <span class="strong">92.3% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>4/13</span>
+                <span class='fraction'>12/13</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">33.33% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/3</span>
+                <span class='fraction'>1/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/1</span>
+                <span class='fraction'>1/1</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">30.76% </span>
+                <span class="strong">92.3% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>4/13</span>
+                <span class='fraction'>12/13</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -122,8 +122,8 @@
 <a name='L57'></a><a href='#L57'>57</a>
 <a name='L58'></a><a href='#L58'>58</a>
 <a name='L59'></a><a href='#L59'>59</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">21x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -132,7 +132,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">21x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -141,22 +141,18 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -176,7 +172,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">21x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// src/utils/email.service.ts
@@ -190,7 +190,7 @@ interface EmailOptions {
   html?: string;
 }
 &nbsp;
-const sendEmail = <span class="fstat-no" title="function not covered" >async </span>(options: EmailOptions): Promise&lt;boolean&gt; =&gt; {
+const sendEmail = async (options: EmailOptions): Promise&lt;boolean&gt; =&gt; {
   // --- MOCK IMPLEMENTATION ---
   // In a real app, integrate with your email provider (SendGrid, Mailgun, etc.)
   // Check if email configuration is present
@@ -199,18 +199,18 @@ const sendEmail = <span class="fstat-no" title="function not covered" >async </s
 //      return false;
 //   }
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  logger.info(`--- Mock Email Sent ---`);</span>
-<span class="cstat-no" title="statement not covered" >  logger.info(`To: ${options.to}`);</span>
-<span class="cstat-no" title="statement not covered" >  logger.info(`From: ${env.EMAIL_FROM_ADDRESS || 'mock-email@example.com'}`);</span>
-<span class="cstat-no" title="statement not covered" >  logger.info(`Subject: ${options.subject}`);</span>
-<span class="cstat-no" title="statement not covered" >  logger.info(`Text Body: ${options.text}`);</span>
-<span class="cstat-no" title="statement not covered" >  <span class="missing-if-branch" title="if path not taken" >I</span>if (options.html) {</span>
+  logger.info(`--- Mock Email Sent ---`);
+  logger.info(`To: ${options.to}`);
+  logger.info(`From: ${env.EMAIL_FROM_ADDRESS || <span class="branch-1 cbranch-no" title="branch not covered" >'mock-email@example.com'}</span>`);
+  logger.info(`Subject: ${options.subject}`);
+  logger.info(`Text Body: ${options.text}`);
+  <span class="missing-if-branch" title="if path not taken" >I</span>if (options.html) {
 <span class="cstat-no" title="statement not covered" >      logger.info(`HTML Body: [HTML Content]`); </span>// Don't log full HTML usually
   }
-<span class="cstat-no" title="statement not covered" >  logger.info(`-----------------------`);</span>
+  logger.info(`-----------------------`);
 &nbsp;
   // Simulate success
-<span class="cstat-no" title="statement not covered" >  return true;</span>
+  return true;
 &nbsp;
   // --- Example using SendGrid (install @sendgrid/mail) ---
   /*
@@ -244,7 +244,7 @@ export const emailService = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-04T17:50:32.632Z
+                at 2025-12-04T20:44:27.430Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

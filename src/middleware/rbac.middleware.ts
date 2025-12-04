@@ -43,16 +43,16 @@ export const checkPermissions = (requiredPermissions: string[]) => {
 export const checkRoles = (requiredRoles: string[]) => {
     return (req: Request, res: Response, next: NextFunction): void => {
         if (!req.user || !req.user.roles) {
-             logger.error('RBAC role check failed: User or roles not found on request. Ensure authMiddleware runs first and includes roles.');
+            logger.error('RBAC role check failed: User or roles not found on request. Ensure authMiddleware runs first and includes roles.');
             return next(new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'User authentication context missing'));
         }
 
-        const userRoleNames = req.user.roles.map(role => role.name);
+        const userRoleNames = req.user.roles.map(r => r.role.name);
 
         const hasRequiredRole = requiredRoles.some(role => userRoleNames.includes(role));
 
         if (!hasRequiredRole) {
-             logger.warn(`Authorization failed for user ${req.user.id} (tenant: ${req.tenantId}): Missing roles. Required one of: [${requiredRoles.join(', ')}], Has: [${userRoleNames.join(', ')}]`);
+            logger.warn(`Authorization failed for user ${req.user.id} (tenant: ${req.tenantId}): Missing roles. Required one of: [${requiredRoles.join(', ')}], Has: [${userRoleNames.join(', ')}]`);
             return next(new ApiError(httpStatus.FORBIDDEN, 'Insufficient role'));
         }
 

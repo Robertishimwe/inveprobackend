@@ -16,11 +16,13 @@ interface AuthPayload extends JwtPayload {
 // Extend Express Request type (ensure this matches src/types/express/index.d.ts)
 // Define a more specific type for the attached user object
 export interface AuthenticatedUser extends User {
-    roles: (Role & {
-        permissions: (RolePermission & {
-            permission: Permission;
-        })[];
-    })[];
+    roles: {
+        role: Role & {
+            permissions: (RolePermission & {
+                permission: Permission;
+            })[];
+        };
+    }[];
     // We'll compute effective permissions directly on the object
     effectivePermissions: Set<string>;
     allowedLocationIds: string[]; // IDs of locations the user can access, or ['*'] for global
@@ -106,7 +108,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         // Attach the enriched user object and tenantId separately
         req.user = {
             ...userWithRoles,
-            roles: userWithRoles.roles.map(ur => ur.role), // Simplify roles structure attached
+            roles: userWithRoles.roles as any, // Keep the original structure (UserRole[]) - cast to any to resolve TS mismatch with AuthenticatedUser interface
             effectivePermissions: effectivePermissions,
             allowedLocationIds: allowedLocationIds
         } as AuthenticatedUser; // Cast to our specific type
