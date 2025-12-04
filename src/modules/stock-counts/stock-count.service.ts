@@ -9,7 +9,7 @@ import { InitiateStockCountDto, EnterCountsDto, ReviewCountDto } from './dto';
 // Import inventory helper
 import { inventoryService } from '@/modules/inventory/inventory.service'; // Or adjust import
 
-type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; stockCountId?: string | null; data?: any; error?: any; [key: string]: any; };
+type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; stockCountId?: string | null; data?: any; error?: any;[key: string]: any; };
 
 type StockCountSummary = StockCount & {
     location: Pick<Location, 'id' | 'name'>;
@@ -136,72 +136,72 @@ const initiateStockCount = async (data: InitiateStockCountDto, tenantId: string,
 
 /** Enter counted quantities for items in a stock count */
 const enterCountData = async (stockCountId: string, data: EnterCountsDto, tenantId: string, userId: string): Promise<{ updatedItems: number }> => {
-     const logContext: LogContext = { function: 'enterCountData', tenantId, userId, stockCountId, itemCount: data.items.length };
+    const logContext: LogContext = { function: 'enterCountData', tenantId, userId, stockCountId, itemCount: data.items.length };
 
-     // 1. Verify stock count exists and is in a countable state
-     const stockCount = await prisma.stockCount.findFirst({
-         where: { id: stockCountId, tenantId },
-         select: { status: true, id: true }
-     });
-     if (!stockCount) throw new ApiError(httpStatus.NOT_FOUND, 'Stock count not found.');
+    // 1. Verify stock count exists and is in a countable state
+    const stockCount = await prisma.stockCount.findFirst({
+        where: { id: stockCountId, tenantId },
+        select: { status: true, id: true }
+    });
+    if (!stockCount) throw new ApiError(httpStatus.NOT_FOUND, 'Stock count not found.');
 
-     const allowedStatuses: StockCountStatus[] = [StockCountStatus.PENDING, StockCountStatus.COUNTING, StockCountStatus.REVIEW];
+    const allowedStatuses: StockCountStatus[] = [StockCountStatus.PENDING, StockCountStatus.COUNTING, StockCountStatus.REVIEW];
 
-     if (!allowedStatuses.includes(stockCount.status)) { 
-         throw new ApiError(httpStatus.BAD_REQUEST, `Cannot enter counts for stock count with status ${stockCount.status}.`);
-     }
+    if (!allowedStatuses.includes(stockCount.status)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Cannot enter counts for stock count with status ${stockCount.status}.`);
+    }
 
-     // TODO: Add validation for lot/serial counts against product requirements if applicable
+    // TODO: Add validation for lot/serial counts against product requirements if applicable
 
-     // 2. Update items within a transaction for atomicity
-     try {
-         let updatedCount = 0;
-         await prisma.$transaction(async (tx) => {
-             // Update status to COUNTING if it was PENDING
-             if (stockCount.status === StockCountStatus.PENDING) {
-                 await tx.stockCount.update({ where: { id: stockCountId }, data: { status: StockCountStatus.COUNTING } });
-             }
+    // 2. Update items within a transaction for atomicity
+    try {
+        let updatedCount = 0;
+        await prisma.$transaction(async (tx) => {
+            // Update status to COUNTING if it was PENDING
+            if (stockCount.status === StockCountStatus.PENDING) {
+                await tx.stockCount.update({ where: { id: stockCountId }, data: { status: StockCountStatus.COUNTING } });
+            }
 
-             for (const itemData of data.items) {
-                 const countedQuantity = new Prisma.Decimal(itemData.countedQuantity);
-                 const stockCountItem = await tx.stockCountItem.findUnique({ where: { id: itemData.stockCountItemId }, select: { snapshotQuantity: true, stockCountId: true } });
+            for (const itemData of data.items) {
+                const countedQuantity = new Prisma.Decimal(itemData.countedQuantity);
+                const stockCountItem = await tx.stockCountItem.findUnique({ where: { id: itemData.stockCountItemId }, select: { snapshotQuantity: true, stockCountId: true } });
 
-                 // Validate item belongs to this count
-                 if (!stockCountItem || stockCountItem.stockCountId !== stockCountId) {
-                      logger.warn(`Stock count item ${itemData.stockCountItemId} not found or doesn't belong to count ${stockCountId}`, logContext);
-                      // Optionally collect errors and report back, or just skip invalid items
-                      continue;
-                 }
+                // Validate item belongs to this count
+                if (!stockCountItem || stockCountItem.stockCountId !== stockCountId) {
+                    logger.warn(`Stock count item ${itemData.stockCountItemId} not found or doesn't belong to count ${stockCountId}`, logContext);
+                    // Optionally collect errors and report back, or just skip invalid items
+                    continue;
+                }
 
-                 const varianceQuantity = countedQuantity.minus(stockCountItem.snapshotQuantity);
+                const varianceQuantity = countedQuantity.minus(stockCountItem.snapshotQuantity);
 
-                 const result = await tx.stockCountItem.updateMany({ // Use updateMany to ensure it belongs to the count
-                      where: {
-                          id: itemData.stockCountItemId,
-                          stockCountId: stockCountId // Ensure item belongs to this count
-                      },
-                      data: {
-                          countedQuantity: countedQuantity,
-                          varianceQuantity: varianceQuantity,
-                          status: StockCountItemStatus.COUNTED, // Mark as counted
-                          countedByUserId: userId,
-                          countedAt: new Date(),
-                          notes: itemData.notes, // Update notes if provided
-                          // TODO: Update lot/serial if captured
-                      }
-                 });
-                 updatedCount += result.count;
-             }
-         });
+                const result = await tx.stockCountItem.updateMany({ // Use updateMany to ensure it belongs to the count
+                    where: {
+                        id: itemData.stockCountItemId,
+                        stockCountId: stockCountId // Ensure item belongs to this count
+                    },
+                    data: {
+                        countedQuantity: countedQuantity,
+                        varianceQuantity: varianceQuantity,
+                        status: StockCountItemStatus.COUNTED, // Mark as counted
+                        countedByUserId: userId,
+                        countedAt: new Date(),
+                        notes: itemData.notes, // Update notes if provided
+                        // TODO: Update lot/serial if captured
+                    }
+                });
+                updatedCount += result.count;
+            }
+        });
 
-         logger.info(`Successfully entered counts for ${updatedCount} items in stock count ${stockCountId}`, logContext);
-         return { updatedItems: updatedCount };
+        logger.info(`Successfully entered counts for ${updatedCount} items in stock count ${stockCountId}`, logContext);
+        return { updatedItems: updatedCount };
 
-     } catch (error: any) {
+    } catch (error: any) {
         logContext.error = error;
         logger.error(`Error entering stock count data`, logContext);
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to enter count data.');
-     }
+    }
 };
 
 /** Review counted items and mark for approval/recount/skip */
@@ -225,50 +225,50 @@ const reviewStockCount = async (stockCountId: string, data: ReviewCountDto, tena
 
         await prisma.$transaction(async (tx) => {
             // Update header status to REVIEW if it wasn't already
-             if (stockCount.status !== StockCountStatus.REVIEW) {
-                 await tx.stockCount.update({ where: { id: stockCountId }, data: { status: StockCountStatus.REVIEW } });
-             }
+            if (stockCount.status !== StockCountStatus.REVIEW) {
+                await tx.stockCount.update({ where: { id: stockCountId }, data: { status: StockCountStatus.REVIEW } });
+            }
 
-             for (const itemAction of data.items) {
-                 const updateResult = await tx.stockCountItem.updateMany({
-                      where: {
-                          id: itemAction.stockCountItemId,
-                          stockCountId: stockCountId, // Ensure item belongs to this count
-                          // Only allow review actions on items that HAVE been counted
-                          status: { in: [StockCountItemStatus.COUNTED, StockCountItemStatus.RECOUNT_REQUESTED]} // Or allow re-reviewing approved? Depends on workflow.
-                      },
-                      data: {
-                          status: itemAction.action, // Set to APPROVED, RECOUNT_REQUESTED, or SKIPPED
-                          reviewNotes: itemAction.notes,
-                          // Optionally store reviewer ID/timestamp if needed on item level
-                      }
-                 });
-                 if (updateResult.count === 0) {
+            for (const itemAction of data.items) {
+                const updateResult = await tx.stockCountItem.updateMany({
+                    where: {
+                        id: itemAction.stockCountItemId,
+                        stockCountId: stockCountId, // Ensure item belongs to this count
+                        // Only allow review actions on items that HAVE been counted
+                        status: { in: [StockCountItemStatus.COUNTED, StockCountItemStatus.RECOUNT_REQUESTED] } // Or allow re-reviewing approved? Depends on workflow.
+                    },
+                    data: {
+                        status: itemAction.action, // Set to APPROVED, RECOUNT_REQUESTED, or SKIPPED
+                        reviewNotes: itemAction.notes,
+                        // Optionally store reviewer ID/timestamp if needed on item level
+                    }
+                });
+                if (updateResult.count === 0) {
                     // Log or potentially throw error if trying to review an item not in correct state
-                     logger.warn(`Review action skipped for item ${itemAction.stockCountItemId} - item not found or not in countable/recountable state.`, logContext);
-                 }
-                 if (itemAction.action === StockCountItemStatus.RECOUNT_REQUESTED) {
+                    logger.warn(`Review action skipped for item ${itemAction.stockCountItemId} - item not found or not in countable/recountable state.`, logContext);
+                }
+                if (itemAction.action === StockCountItemStatus.RECOUNT_REQUESTED) {
                     needsFurtherAction = true;
-                 }
-             }
+                }
+            }
 
-             // Check if all items are now resolved (APPROVED or SKIPPED)
-             if (!needsFurtherAction) {
-                  const unresolvedCount = await tx.stockCountItem.count({
-                       where: { stockCountId: stockCountId, status: { notIn: [StockCountItemStatus.APPROVED, StockCountItemStatus.SKIPPED]} }
-                  });
-                  if (unresolvedCount === 0) {
-                       // If no items need recount/counting, mark the main count ready for posting (or directly to COMPLETED if no explicit posting step)
-                       // Let's assume an explicit posting step, so just ensure status is REVIEW.
-                       // If status wasn't REVIEW initially, it was set above. If it was REVIEW, it stays REVIEW.
-                        logger.info(`All items reviewed for stock count ${stockCountId}. Ready for posting adjustments.`, logContext);
-                  } else {
-                      // Some items might still be PENDING if not all were submitted in EnterCountsDto
-                       logger.info(`${unresolvedCount} items still pending count/recount for stock count ${stockCountId}.`, logContext);
-                  }
-             } else {
-                 logger.info(`Recount requested for one or more items in stock count ${stockCountId}. Status remains REVIEW.`, logContext);
-             }
+            // Check if all items are now resolved (APPROVED or SKIPPED)
+            if (!needsFurtherAction) {
+                const unresolvedCount = await tx.stockCountItem.count({
+                    where: { stockCountId: stockCountId, status: { notIn: [StockCountItemStatus.APPROVED, StockCountItemStatus.SKIPPED] } }
+                });
+                if (unresolvedCount === 0) {
+                    // If no items need recount/counting, mark the main count ready for posting (or directly to COMPLETED if no explicit posting step)
+                    // Let's assume an explicit posting step, so just ensure status is REVIEW.
+                    // If status wasn't REVIEW initially, it was set above. If it was REVIEW, it stays REVIEW.
+                    logger.info(`All items reviewed for stock count ${stockCountId}. Ready for posting adjustments.`, logContext);
+                } else {
+                    // Some items might still be PENDING if not all were submitted in EnterCountsDto
+                    logger.info(`${unresolvedCount} items still pending count/recount for stock count ${stockCountId}.`, logContext);
+                }
+            } else {
+                logger.info(`Recount requested for one or more items in stock count ${stockCountId}. Status remains REVIEW.`, logContext);
+            }
 
         });
 
@@ -287,60 +287,60 @@ const reviewStockCount = async (stockCountId: string, data: ReviewCountDto, tena
 const postStockCountAdjustments = async (stockCountId: string, tenantId: string, userId: string): Promise<{ success: boolean, adjustmentsCreated: number }> => {
     const logContext: LogContext = { function: 'postStockCountAdjustments', tenantId, userId, stockCountId };
 
-     // 1. Verify stock count exists and is ready for posting
-     const stockCount = await prisma.stockCount.findFirst({
-         where: { id: stockCountId, tenantId },
-         select: { status: true, id: true, countNumber: true, locationId: true }
-     });
-     if (!stockCount) throw new ApiError(httpStatus.NOT_FOUND, 'Stock count not found.');
-     // Allow posting only from REVIEW status (after manager has approved items)
-     // Or allow posting directly from COUNTING if skipping review step? Assuming REVIEW is required.
-     if (stockCount.status !== StockCountStatus.REVIEW) {
-         throw new ApiError(httpStatus.BAD_REQUEST, `Stock count must be in REVIEW status to post adjustments (current: ${stockCount.status}). Ensure all items are approved or skipped.`);
-     }
+    // 1. Verify stock count exists and is ready for posting
+    const stockCount = await prisma.stockCount.findFirst({
+        where: { id: stockCountId, tenantId },
+        select: { status: true, id: true, countNumber: true, locationId: true }
+    });
+    if (!stockCount) throw new ApiError(httpStatus.NOT_FOUND, 'Stock count not found.');
+    // Allow posting only from REVIEW status (after manager has approved items)
+    // Or allow posting directly from COUNTING if skipping review step? Assuming REVIEW is required.
+    if (stockCount.status !== StockCountStatus.REVIEW) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Stock count must be in REVIEW status to post adjustments (current: ${stockCount.status}). Ensure all items are approved or skipped.`);
+    }
 
-     // 2. Find items with approved variances
-     const itemsToAdjust = await prisma.stockCountItem.findMany({
-         where: {
-             stockCountId: stockCountId,
-             status: StockCountItemStatus.APPROVED, // Only post approved items
-             varianceQuantity: { not: 0 } // Only post items with actual variance
-         },
-         select: { id: true, productId: true, varianceQuantity: true, unitCostAtSnapshot: true, lotNumber: true, serialNumber: true }
-     });
+    // 2. Find items with approved variances
+    const itemsToAdjust = await prisma.stockCountItem.findMany({
+        where: {
+            stockCountId: stockCountId,
+            status: StockCountItemStatus.APPROVED, // Only post approved items
+            varianceQuantity: { not: 0 } // Only post items with actual variance
+        },
+        select: { id: true, productId: true, varianceQuantity: true, unitCostAtSnapshot: true, lotNumber: true, serialNumber: true }
+    });
 
-     if (itemsToAdjust.length === 0) {
-         logger.info(`No approved variances found to post for stock count ${stockCountId}. Marking as complete.`, logContext);
-         // Update status to COMPLETED even if no adjustments needed
-         await prisma.stockCount.update({
-             where: { id: stockCountId },
-             data: { status: StockCountStatus.COMPLETED, completedAt: new Date(), completedByUserId: userId }
-         });
-         return { success: true, adjustmentsCreated: 0 };
-     }
-     logContext.itemsToAdjustCount = itemsToAdjust.length;
+    if (itemsToAdjust.length === 0) {
+        logger.info(`No approved variances found to post for stock count ${stockCountId}. Marking as complete.`, logContext);
+        // Update status to COMPLETED even if no adjustments needed
+        await prisma.stockCount.update({
+            where: { id: stockCountId },
+            data: { status: StockCountStatus.COMPLETED, completedAt: new Date(), completedByUserId: userId }
+        });
+        return { success: true, adjustmentsCreated: 0 };
+    }
+    logContext.itemsToAdjustCount = itemsToAdjust.length;
 
-     // 3. Post adjustments within a transaction
-     try {
-         await prisma.$transaction(async (tx) => {
+    // 3. Post adjustments within a transaction
+    try {
+        await prisma.$transaction(async (tx) => {
 
-             // Option 1: Create one large adjustment record
-             //  let adjustmentItemsData: Prisma.InventoryAdjustmentItemCreateManyInput[] = [];
+            // Option 1: Create one large adjustment record
+            //  let adjustmentItemsData: Prisma.InventoryAdjustmentItemCreateManyInput[] = [];
             //  let inventoryTransactionData: Prisma.InventoryTransactionCreateManyInput[] = [];
-             /*
-             const adjustment = await tx.inventoryAdjustment.create({
-                 data: { tenantId, locationId: stockCount.locationId, reasonCode: 'STOCK_COUNT_VARIANCE', notes: `Variance from Stock Count ${stockCount.countNumber ?? stockCountId}`, createdByUserId: userId, adjustmentDate: new Date() }
-             });
-             logContext.adjustmentId = adjustment.id;
+            /*
+            const adjustment = await tx.inventoryAdjustment.create({
+                data: { tenantId, locationId: stockCount.locationId, reasonCode: 'STOCK_COUNT_VARIANCE', notes: `Variance from Stock Count ${stockCount.countNumber ?? stockCountId}`, createdByUserId: userId, adjustmentDate: new Date() }
+            });
+            logContext.adjustmentId = adjustment.id;
 
-             for (const item of itemsToAdjust) {
-                 await _updateInventoryItemQuantity(tx, tenantId, item.productId, stockCount.locationId, item.varianceQuantity!);
-                 adjustmentItemsData.push({ tenantId, adjustmentId: adjustment.id, productId: item.productId, quantityChange: item.varianceQuantity!, unitCost: item.unitCostAtSnapshot, lotNumber: item.lotNumber, serialNumber: item.serialNumber });
-                 inventoryTransactionData.push({ tenantId, userId, productId: item.productId, locationId: stockCount.locationId, quantityChange: item.varianceQuantity!, transactionType: InventoryTransactionType.CYCLE_COUNT_ADJUSTMENT, unitCost: item.unitCostAtSnapshot, relatedAdjustmentId: adjustment.id, notes: `Variance from SC ${stockCount.countNumber ?? stockCountId}`, lotNumber: item.lotNumber, serialNumber: item.serialNumber });
-             }
-             await tx.inventoryAdjustmentItem.createMany({ data: adjustmentItemsData });
-             await tx.inventoryTransaction.createMany({ data: inventoryTransactionData });
-             */
+            for (const item of itemsToAdjust) {
+                await _updateInventoryItemQuantity(tx, tenantId, item.productId, stockCount.locationId, item.varianceQuantity!);
+                adjustmentItemsData.push({ tenantId, adjustmentId: adjustment.id, productId: item.productId, quantityChange: item.varianceQuantity!, unitCost: item.unitCostAtSnapshot, lotNumber: item.lotNumber, serialNumber: item.serialNumber });
+                inventoryTransactionData.push({ tenantId, userId, productId: item.productId, locationId: stockCount.locationId, quantityChange: item.varianceQuantity!, transactionType: InventoryTransactionType.CYCLE_COUNT_ADJUSTMENT, unitCost: item.unitCostAtSnapshot, relatedAdjustmentId: adjustment.id, notes: `Variance from SC ${stockCount.countNumber ?? stockCountId}`, lotNumber: item.lotNumber, serialNumber: item.serialNumber });
+            }
+            await tx.inventoryAdjustmentItem.createMany({ data: adjustmentItemsData });
+            await tx.inventoryTransaction.createMany({ data: inventoryTransactionData });
+            */
 
             // Option 2 (Using _recordStockMovement): Create adjustment header FIRST, then loop items
             const adjustment = await tx.inventoryAdjustment.create({
@@ -348,21 +348,21 @@ const postStockCountAdjustments = async (stockCountId: string, tenantId: string,
             });
             logContext.adjustmentId = adjustment.id;
 
-             for (const item of itemsToAdjust) {
-                  // Call the helper which updates item and creates transaction
-                  // Ensure varianceQuantity is not null (checked by findMany where clause)
-                  await inventoryService._recordStockMovement(
-                      tx, tenantId, userId, item.productId, stockCount.locationId,
-                      item.varianceQuantity!, // Pass variance directly
-                      InventoryTransactionType.CYCLE_COUNT_ADJUSTMENT,
-                      item.unitCostAtSnapshot,
-                      { adjustmentId: adjustment.id }, // Link to the adjustment record
-                      `Variance from SC ${stockCount.countNumber ?? stockCountId}`,
-                      item.lotNumber,
-                      item.serialNumber
-                  );
-                 // Also create the AdjustmentItem link
-                 await tx.inventoryAdjustmentItem.create({
+            for (const item of itemsToAdjust) {
+                // Call the helper which updates item and creates transaction
+                // Ensure varianceQuantity is not null (checked by findMany where clause)
+                await inventoryService._recordStockMovement(
+                    tx, tenantId, userId, item.productId, stockCount.locationId,
+                    item.varianceQuantity!, // Pass variance directly
+                    InventoryTransactionType.CYCLE_COUNT_ADJUSTMENT,
+                    item.unitCostAtSnapshot,
+                    { adjustmentId: adjustment.id }, // Link to the adjustment record
+                    `Variance from SC ${stockCount.countNumber ?? stockCountId}`,
+                    item.lotNumber,
+                    item.serialNumber
+                );
+                // Also create the AdjustmentItem link
+                await tx.inventoryAdjustmentItem.create({
                     data: {
                         tenantId,
                         adjustmentId: adjustment.id,
@@ -372,25 +372,25 @@ const postStockCountAdjustments = async (stockCountId: string, tenantId: string,
                         lotNumber: item.lotNumber,
                         serialNumber: item.serialNumber,
                     }
-                 });
-             }
+                });
+            }
 
-             // 4. Update Stock Count status to COMPLETED
-             await tx.stockCount.update({
-                 where: { id: stockCountId },
-                 data: { status: StockCountStatus.COMPLETED, completedAt: new Date(), completedByUserId: userId }
-             });
-         });
+            // 4. Update Stock Count status to COMPLETED
+            await tx.stockCount.update({
+                where: { id: stockCountId },
+                data: { status: StockCountStatus.COMPLETED, completedAt: new Date(), completedByUserId: userId }
+            });
+        });
 
-         logger.info(`Successfully posted ${itemsToAdjust.length} adjustments for stock count ${stockCountId}`, logContext);
-         return { success: true, adjustmentsCreated: itemsToAdjust.length };
+        logger.info(`Successfully posted ${itemsToAdjust.length} adjustments for stock count ${stockCountId}`, logContext);
+        return { success: true, adjustmentsCreated: itemsToAdjust.length };
 
-     } catch (error: any) {
+    } catch (error: any) {
         if (error instanceof ApiError) throw error;
         logContext.error = error;
         logger.error(`Error posting stock count adjustments`, logContext);
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to post stock count adjustments.');
-     }
+    }
 };
 
 
@@ -483,8 +483,8 @@ const getStockCountById = async (stockCountId: string, tenantId: string): Promis
         });
 
         if (!stockCount) {
-             logger.warn(`Stock count not found or tenant mismatch`, logContext);
-             return null;
+            logger.warn(`Stock count not found or tenant mismatch`, logContext);
+            return null;
         }
 
         logger.debug(`Stock count found successfully`, logContext);
@@ -502,12 +502,12 @@ const getStockCountById = async (stockCountId: string, tenantId: string): Promis
 
 // --- Service Exports ---
 export const stockCountService = {
-  initiateStockCount,
-  enterCountData,
-  reviewStockCount,
-  postStockCountAdjustments,
-  queryStockCounts,
-  getStockCountById,
+    initiateStockCount,
+    enterCountData,
+    reviewStockCount,
+    postStockCountAdjustments,
+    queryStockCounts,
+    getStockCountById,
 };
 
 // --- Re-add _updateInventoryItemQuantity Helper ---

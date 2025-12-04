@@ -1120,7 +1120,7 @@ model StockCount {
   id                String           @id @default(uuid())
   tenantId          String           @map("tenant_id")
   locationId        String           @map("location_id")
-  countNumber       String?          @unique @map("count_number") // Optional: Auto-generated count identifier
+  countNumber       String?          @map("count_number") // Optional: Auto-generated count identifier
   status            StockCountStatus @default(PENDING)
   type              StockCountType   // FULL or CYCLE
   initiatedByUserId String           @map("initiated_by_user_id")
@@ -1140,10 +1140,10 @@ model StockCount {
   completedByUser User?              @relation("CompletedStockCounts", fields: [completedByUserId], references: [id], onDelete: SetNull)
   items           StockCountItem[]
 
+  @@unique([tenantId, countNumber]) // Unique per tenant
   @@index([tenantId])
   @@index([locationId])
   @@index([status])
-  @@index([type])
   @@index([initiatedAt])
   @@map("stock_counts")
 }
