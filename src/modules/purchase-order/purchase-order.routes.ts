@@ -40,6 +40,11 @@ router.route('/')
         purchaseOrderController.getPurchaseOrders // Handler (query param validation inside)
     );
 
+router.get('/stats',
+    checkPermissions(['po:read']),
+    purchaseOrderController.getPurchaseOrderStats
+);
+
 router.route('/:poId')
     /**
      * GET /api/v1/purchase-orders/:poId

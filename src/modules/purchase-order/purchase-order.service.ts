@@ -297,6 +297,69 @@ const queryPurchaseOrders = async (
     }
 };
 
+/** Get Purchase Order Stats */
+const getPurchaseOrderStats = async (
+    filter: Prisma.PurchaseOrderWhereInput,
+    allowedLocationIds: string[] = []
+): Promise<{
+    totalValue: number;
+    activeCount: number;
+    pendingCount: number;
+    overdueCount: number;
+}> => {
+    const tenantIdForLog: string | undefined = typeof filter.tenantId === 'string' ? filter.tenantId : undefined;
+    const logContext: LogContext = { function: 'getPurchaseOrderStats', tenantId: tenantIdForLog };
+
+    const locationFilter = allowedLocationIds.includes('*') ? {} : { locationId: { in: allowedLocationIds } };
+    const baseWhere = { ...filter, ...locationFilter };
+
+    try {
+        const [totalValueResult, activeCount, pendingCount, overdueCount] = await prisma.$transaction([
+            // 1. Total Value (Sum of totalAmount for non-cancelled/closed POs)
+            prisma.purchaseOrder.aggregate({
+                _sum: { totalAmount: true },
+                where: {
+                    ...baseWhere,
+                    status: { notIn: [PurchaseOrderStatus.CANCELLED, PurchaseOrderStatus.CLOSED] }
+                }
+            }),
+            // 2. Active POs (Not Cancelled/Closed/Fully Received)
+            prisma.purchaseOrder.count({
+                where: {
+                    ...baseWhere,
+                    status: { notIn: [PurchaseOrderStatus.CANCELLED, PurchaseOrderStatus.CLOSED, PurchaseOrderStatus.FULLY_RECEIVED] }
+                }
+            }),
+            // 3. Pending Approvals
+            prisma.purchaseOrder.count({
+                where: {
+                    ...baseWhere,
+                    status: PurchaseOrderStatus.PENDING_APPROVAL
+                }
+            }),
+            // 4. Overdue POs (Expected date passed, not fully received/closed/cancelled)
+            prisma.purchaseOrder.count({
+                where: {
+                    ...baseWhere,
+                    expectedDeliveryDate: { lt: new Date() },
+                    status: { notIn: [PurchaseOrderStatus.FULLY_RECEIVED, PurchaseOrderStatus.CLOSED, PurchaseOrderStatus.CANCELLED] }
+                }
+            })
+        ]);
+
+        return {
+            totalValue: totalValueResult._sum.totalAmount ? Number(totalValueResult._sum.totalAmount) : 0,
+            activeCount,
+            pendingCount,
+            overdueCount
+        };
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error calculating PO stats`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to calculate purchase order statistics.');
+    }
+};
+
 /** Get Purchase Order By ID */
 const getPurchaseOrderById = async (poId: string, tenantId: string): Promise<PurchaseOrderWithDetails | null> => {
     const logContext: LogContext = { function: 'getPurchaseOrderById', poId, tenantId };
@@ -857,4 +920,5 @@ export const purchaseOrderService = {
     closePurchaseOrder,
     // Receiving
     receivePurchaseOrderItems,
+    getPurchaseOrderStats,
 };

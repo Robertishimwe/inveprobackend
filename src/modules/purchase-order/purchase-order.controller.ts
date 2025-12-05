@@ -211,6 +211,44 @@ const receiveItems = catchAsync(async (req: Request, res: Response) => {
 // but likely restricted only to POs in DRAFT status for safety.
 
 
+
+/**
+ * Controller to handle fetching Purchase Order statistics.
+ */
+const getPurchaseOrderStats = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req);
+
+    // Define allowed filters from query parameters (same as getPurchaseOrders)
+    const filterParams = pick(req.query, [
+        'supplierId', 'locationId', 'status', 'userId', 'poNumber',
+        'dateFrom', 'dateTo', 'expectedDateFrom', 'expectedDateTo'
+    ]);
+
+    // Build Prisma WhereInput object (Duplicated logic for now to keep it self-contained)
+    const filter: Prisma.PurchaseOrderWhereInput = { tenantId };
+
+    if (filterParams.supplierId) filter.supplierId = filterParams.supplierId as string;
+    if (filterParams.locationId) filter.locationId = filterParams.locationId as string;
+    if (filterParams.status && Object.values(PurchaseOrderStatus).includes(filterParams.status as PurchaseOrderStatus)) {
+        filter.status = { equals: filterParams.status as PurchaseOrderStatus };
+    }
+    if (filterParams.userId) filter.createdByUserId = filterParams.userId as string;
+    if (filterParams.poNumber) filter.poNumber = { contains: filterParams.poNumber as string, mode: 'insensitive' };
+
+    if (filterParams.dateFrom || filterParams.dateTo) {
+        filter.orderDate = {};
+        try {
+            if (filterParams.dateFrom) filter.orderDate.gte = new Date(filterParams.dateFrom as string);
+            if (filterParams.dateTo) filter.orderDate.lte = new Date(filterParams.dateTo as string);
+        } catch (e) { throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format.'); }
+    }
+
+    const allowedLocationIds = req.user?.allowedLocationIds || [];
+    const stats = await purchaseOrderService.getPurchaseOrderStats(filter, allowedLocationIds);
+
+    res.status(httpStatus.OK).send(stats);
+});
+
 // Export all controller methods
 export const purchaseOrderController = {
     createPurchaseOrder,
@@ -224,4 +262,5 @@ export const purchaseOrderController = {
     cancelPurchaseOrder,
     closePurchaseOrder,
     receiveItems,
+    getPurchaseOrderStats,
 };

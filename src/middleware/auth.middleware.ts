@@ -88,7 +88,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         let isAdmin = false;
 
         userWithRoles.roles.forEach(userRole => {
-            if (userRole.role.name === 'Super Admin' || userRole.role.name === 'Tenant Admin') {
+            if (userRole.role.name === 'Super Admin' || userRole.role.name === 'Tenant Admin' || userRole.role.name === 'Admin') {
                 isAdmin = true;
             }
             userRole.role.permissions.forEach(rolePermission => {
