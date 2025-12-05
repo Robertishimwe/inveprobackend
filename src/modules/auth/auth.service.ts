@@ -87,7 +87,7 @@ const generateAndStoreRefreshToken = async (user: User, ipAddress?: string, user
     }
 
 
-    await prisma.refreshToken.create({
+    const refreshTokenRecord = await prisma.refreshToken.create({
         data: {
             userId: user.id,
             tokenHash: hashedToken,
@@ -97,41 +97,65 @@ const generateAndStoreRefreshToken = async (user: User, ipAddress?: string, user
         },
     });
     logger.debug(`Stored new refresh token for user ${user.id}`);
-    return rawRefreshToken; // Return the raw token only once
+
+    // Return composite token: id.rawToken
+    return `${refreshTokenRecord.id}.${rawRefreshToken}`;
 };
 
 /**
  * Find and validate a stored refresh token based on the raw token provided.
  * Checks hash match, expiry, and revocation status.
- * Note: This implementation iterates through potential tokens, which can be inefficient at large scale.
- * @param {string} rawRefreshToken - The raw refresh token provided by the client.
+ * Uses ID lookup for O(1) performance.
+ * @param {string} rawRefreshToken - The raw refresh token provided by the client (format: id.token).
  * @returns {Promise<RefreshToken>} A promise that resolves with the valid RefreshToken record.
  * @throws {ApiError} If the token is not found, invalid, expired, or revoked.
  */
 const findAndValidateRefreshToken = async (rawRefreshToken: string): Promise<RefreshToken> => {
-    // Find *all* non-revoked, non-expired tokens and check hash match.
-    const potentialValidTokens = await prisma.refreshToken.findMany({
-        where: {
-            revokedAt: null,
-            expiresAt: { gt: new Date() }
-        }
+    // Split the token to get ID and raw token
+    const parts = rawRefreshToken.split('.');
+
+    // Backward compatibility or invalid format check
+    if (parts.length !== 2) {
+        // Fallback to old O(N) method if it doesn't look like a composite token
+        // This is useful if there are existing tokens in the wild (though we can't easily distinguish a random string from random.random)
+        // But for security and performance, we should probably just reject if it's not the new format, 
+        // unless we are sure we need to support old tokens. 
+        // Given this is a fix for a test timeout, let's assume we can enforce the new format.
+        // But to be safe against "random string that happens to have a dot", we'll just try to use the first part as ID.
+        // If it's not a UUID, findUnique will fail or return null.
+
+        // Actually, let's just reject invalid formats to be strict.
+        throw new ApiError(httpStatus.UNAUTHORIZED, 'Invalid refresh token format.');
+    }
+
+    const [tokenId, tokenSecret] = parts;
+
+    const tokenRecord = await prisma.refreshToken.findUnique({
+        where: { id: tokenId }
     });
 
-    let matchedTokenRecord: RefreshToken | null = null;
-    for (const tokenRecord of potentialValidTokens) {
-        const isMatch = await compareToken(rawRefreshToken, tokenRecord.tokenHash);
-        if (isMatch) {
-            matchedTokenRecord = tokenRecord;
-            break;
-        }
+    if (!tokenRecord) {
+        throw new ApiError(httpStatus.UNAUTHORIZED, 'Invalid refresh token.');
     }
 
-    if (!matchedTokenRecord) {
-        throw new ApiError(httpStatus.UNAUTHORIZED, 'Invalid refresh token or session expired.');
+    // Check revocation
+    if (tokenRecord.revokedAt) {
+        throw new ApiError(httpStatus.UNAUTHORIZED, 'Refresh token revoked.');
     }
 
-    logger.debug(`Validated refresh token record ${matchedTokenRecord.id} for user ${matchedTokenRecord.userId}`);
-    return matchedTokenRecord;
+    // Check expiry
+    if (new Date() > tokenRecord.expiresAt) {
+        throw new ApiError(httpStatus.UNAUTHORIZED, 'Refresh token expired.');
+    }
+
+    // Check hash
+    const isMatch = await compareToken(tokenSecret, tokenRecord.tokenHash);
+    if (!isMatch) {
+        throw new ApiError(httpStatus.UNAUTHORIZED, 'Invalid refresh token.');
+    }
+
+    logger.debug(`Validated refresh token record ${tokenRecord.id} for user ${tokenRecord.userId}`);
+    return tokenRecord;
 };
 
 
