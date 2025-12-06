@@ -39,6 +39,14 @@ router.get(
     reportingController.getSalesSummary
 );
 
+/** GET /api/v1/reports/sales-chart */
+router.get(
+    '/sales-chart',
+    checkPermissions(['report:view:sales']),
+    validateRequest(ReportQueryDto, 'query'),
+    reportingController.getSalesChartData
+);
+
 /** GET /api/v1/reports/sales-by-product */
 router.get(
     '/sales-by-product',

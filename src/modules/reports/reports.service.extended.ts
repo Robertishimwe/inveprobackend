@@ -333,3 +333,502 @@ export const getLowStock = async (tenantId: string, params: Pick<ReportQueryDto,
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve low stock report.');
     }
 };
+
+
+
+export const getInventoryMovementLedger = async (tenantId: string, params: ReportQueryDto): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getInventoryMovementLedger', tenantId, params };
+    const { currentRange } = getDateRange(params.startDate ? 'custom' : undefined, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        const whereFilter: Prisma.InventoryTransactionWhereInput = {
+            tenantId,
+            timestamp: { gte: start, lte: end },
+        };
+        if (params.locationId) whereFilter.locationId = params.locationId;
+        if (params.productId) whereFilter.productId = params.productId;
+
+        const transactions = await prisma.inventoryTransaction.findMany({
+            where: whereFilter,
+            include: {
+                product: { select: { sku: true, name: true } },
+                location: { select: { name: true } },
+                user: { select: { firstName: true, lastName: true } },
+            },
+            orderBy: { timestamp: 'desc' },
+            take: params.limit || 100,
+            skip: ((params.page || 1) - 1) * (params.limit || 100),
+        });
+
+        const reportItems = transactions.map((tx) => ({
+            transactionId: tx.id.toString(),
+            timestamp: tx.timestamp.toISOString(),
+            productId: tx.productId,
+            sku: tx.product.sku,
+            productName: tx.product.name,
+            locationId: tx.locationId,
+            locationName: tx.location.name,
+            transactionType: tx.transactionType,
+            quantityChange: tx.quantityChange.toFixed(4),
+            unitCost: tx.unitCost?.toFixed(2) ?? null,
+            userId: tx.userId,
+            userName: tx.user ? `${tx.user.firstName || ''} ${tx.user.lastName || ''}`.trim() : 'System',
+            relatedDocumentType: tx.relatedOrderId ? 'Order' : tx.relatedPoId ? 'PO' : tx.relatedTransferId ? 'Transfer' : tx.relatedAdjustmentId ? 'Adjustment' : null,
+            relatedDocumentId: tx.relatedOrderId || tx.relatedPoId || tx.relatedTransferId || tx.relatedAdjustmentId,
+            notes: tx.notes,
+        }));
+
+        logger.info(`Inventory movement ledger fetched successfully. Items: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching inventory movement ledger`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve inventory movement ledger.');
+    }
+};
+
+export const getInventoryAdjustmentReport = async (tenantId: string, params: ReportQueryDto): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getInventoryAdjustmentReport', tenantId, params };
+    const { currentRange } = getDateRange(params.startDate ? 'custom' : undefined, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        const whereFilter: Prisma.InventoryAdjustmentWhereInput = {
+            tenantId,
+            adjustmentDate: { gte: start, lte: end },
+        };
+        if (params.locationId) whereFilter.locationId = params.locationId;
+
+        const adjustments = await prisma.inventoryAdjustment.findMany({
+            where: whereFilter,
+            include: {
+                location: { select: { name: true } },
+                createdByUser: { select: { firstName: true, lastName: true } },
+                items: true,
+            },
+            orderBy: { adjustmentDate: 'desc' },
+        });
+
+        const reportItems = adjustments.map((adj) => ({
+            adjustmentId: adj.id,
+            adjustmentDate: adj.adjustmentDate.toISOString(),
+            locationId: adj.locationId,
+            locationName: adj.location.name,
+            reasonCode: adj.reasonCode,
+            notes: adj.notes,
+            itemCount: adj.items.length,
+            createdByUserId: adj.createdByUserId,
+            createdByUserName: adj.createdByUser ? `${adj.createdByUser.firstName || ''} ${adj.createdByUser.lastName || ''}`.trim() : 'Unknown',
+        }));
+
+        logger.info(`Inventory adjustment report fetched successfully. Items: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching inventory adjustment report`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve inventory adjustment report.');
+    }
+};
+
+export const getInventoryTransferReport = async (tenantId: string, params: ReportQueryDto): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getInventoryTransferReport', tenantId, params };
+    const { currentRange } = getDateRange(params.startDate ? 'custom' : undefined, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        const whereFilter: Prisma.InventoryTransferWhereInput = {
+            tenantId,
+            transferDate: { gte: start, lte: end },
+        };
+        if (params.locationId) {
+            whereFilter.OR = [
+                { sourceLocationId: params.locationId },
+                { destinationLocationId: params.locationId },
+            ];
+        }
+
+        const transfers = await prisma.inventoryTransfer.findMany({
+            where: whereFilter,
+            include: {
+                sourceLocation: { select: { name: true } },
+                destinationLocation: { select: { name: true } },
+                createdByUser: { select: { firstName: true, lastName: true } },
+                items: true,
+            },
+            orderBy: { transferDate: 'desc' },
+        });
+
+        const reportItems = transfers.map((transfer) => ({
+            transferId: transfer.id,
+            transferDate: transfer.transferDate.toISOString(),
+            status: transfer.status,
+            sourceLocationId: transfer.sourceLocationId,
+            sourceLocationName: transfer.sourceLocation.name,
+            destinationLocationId: transfer.destinationLocationId,
+            destinationLocationName: transfer.destinationLocation.name,
+            itemCount: transfer.items.length,
+            createdByUserId: transfer.createdByUserId,
+            createdByUserName: transfer.createdByUser ? `${transfer.createdByUser.firstName || ''} ${transfer.createdByUser.lastName || ''}`.trim() : 'Unknown',
+        }));
+
+        logger.info(`Inventory transfer report fetched successfully. Items: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching inventory transfer report`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve inventory transfer report.');
+    }
+};
+
+export const getPurchaseOrderSummary = async (tenantId: string, params: ReportQueryDto): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getPurchaseOrderSummary', tenantId, params };
+    const { currentRange } = getDateRange(params.startDate ? 'custom' : undefined, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        const whereFilter: Prisma.PurchaseOrderWhereInput = {
+            tenantId,
+            orderDate: { gte: start, lte: end },
+        };
+        if (params.locationId) whereFilter.locationId = params.locationId;
+        if (params.supplierId) whereFilter.supplierId = params.supplierId;
+        if (params.status) whereFilter.status = params.status as any;
+
+        const pos = await prisma.purchaseOrder.findMany({
+            where: whereFilter,
+            include: {
+                supplier: { select: { name: true } },
+                location: { select: { name: true } },
+                items: true,
+            },
+            orderBy: { orderDate: 'desc' },
+        });
+
+        const reportItems = pos.map((po) => ({
+            poId: po.id,
+            poNumber: po.poNumber,
+            orderDate: po.orderDate.toISOString(),
+            expectedDeliveryDate: po.expectedDeliveryDate?.toISOString(),
+            supplierId: po.supplierId,
+            supplierName: po.supplier.name,
+            locationId: po.locationId,
+            locationName: po.location.name,
+            status: po.status,
+            itemCount: po.items.length,
+            totalAmount: po.totalAmount.toFixed(2),
+            isOverdue: po.expectedDeliveryDate ? new Date() > po.expectedDeliveryDate && po.status !== 'FULLY_RECEIVED' && po.status !== 'CLOSED' && po.status !== 'CANCELLED' : false,
+        }));
+
+        logger.info(`Purchase order summary fetched successfully. Items: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching purchase order summary`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve purchase order summary.');
+    }
+};
+
+export const getPurchaseOrderDetailReport = async (tenantId: string, params: ReportQueryDto): Promise<any[]> => {
+    return getPurchaseOrderSummary(tenantId, params);
+};
+
+export const getCustomerPurchaseHistory = async (tenantId: string, customerId: string, params: ReportQueryDto): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getCustomerPurchaseHistory', tenantId, customerId, params };
+
+    try {
+        const orders = await prisma.order.findMany({
+            where: {
+                tenantId,
+                customerId,
+            },
+            include: {
+                items: true,
+            },
+            orderBy: { orderDate: 'desc' },
+            take: params.limit || 50,
+        });
+
+        const reportItems = orders.map((order) => ({
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            orderDate: order.orderDate.toISOString(),
+            totalAmount: order.totalAmount.toFixed(2),
+            status: order.status,
+            itemCount: order.items.length,
+        }));
+
+        logger.info(`Customer purchase history fetched successfully. Items: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching customer purchase history`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve customer purchase history.');
+    }
+};
+
+export const getTopCustomers = async (tenantId: string, params: ReportQueryDto): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getTopCustomers', tenantId, params };
+    const { currentRange } = getDateRange(params.startDate ? 'custom' : undefined, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        const customers = await prisma.order.groupBy({
+            by: ['customerId'],
+            _sum: { totalAmount: true },
+            _count: { id: true },
+            where: {
+                tenantId,
+                status: { in: [OrderStatus.COMPLETED, OrderStatus.SHIPPED] },
+                createdAt: { gte: start, lte: end },
+                customerId: { not: null },
+            },
+            orderBy: { _sum: { totalAmount: 'desc' } },
+            take: params.limit || 20,
+        });
+
+        const customerIds = customers.map((c) => c.customerId) as string[];
+        const customerDetails = await prisma.customer.findMany({
+            where: { id: { in: customerIds } },
+            select: { id: true, firstName: true, lastName: true, companyName: true, email: true },
+        });
+
+        const customerMap = new Map(customerDetails.map((c) => [c.id, c]));
+
+        const reportItems = customers.map((c) => {
+            const details = customerMap.get(c.customerId!);
+            const name = details?.companyName || `${details?.firstName || ''} ${details?.lastName || ''}`.trim() || 'Unknown Customer';
+
+            return {
+                customerId: c.customerId!,
+                customerName: name,
+                email: details?.email,
+                totalSpent: (c._sum.totalAmount ?? new Prisma.Decimal(0)).toFixed(2),
+                orderCount: c._count.id,
+            };
+        });
+
+        logger.info(`Top customers fetched successfully. Items: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching top customers`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve top customers.');
+    }
+};
+
+export const getPosSessionReport = async (tenantId: string, params: ReportQueryDto): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getPosSessionReport', tenantId, params };
+    const { currentRange } = getDateRange(params.startDate ? 'custom' : undefined, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        const sessions = await prisma.posSession.findMany({
+            where: {
+                tenantId,
+                startTime: { gte: start, lte: end },
+                ...(params.locationId ? { locationId: params.locationId } : {}),
+                ...(params.userId ? { userId: params.userId } : {}),
+            },
+            include: {
+                location: { select: { name: true } },
+                user: { select: { firstName: true, lastName: true } },
+                transactions: true,
+            },
+            orderBy: { startTime: 'desc' },
+        });
+
+        const reportItems = sessions.map((session) => {
+            const totalCashSales = session.transactions
+                .filter(t => t.transactionType === 'CASH_SALE')
+                .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const totalCashRefunds = session.transactions
+                .filter(t => t.transactionType === 'CASH_REFUND')
+                .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const totalPayIns = session.transactions
+                .filter(t => t.transactionType === 'PAY_IN')
+                .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const totalPayOuts = session.transactions
+                .filter(t => t.transactionType === 'PAY_OUT')
+                .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const netCashChange = totalCashSales.plus(totalPayIns).minus(totalCashRefunds).minus(totalPayOuts);
+            const expectedCash = session.startingCash.plus(netCashChange);
+
+            return {
+                sessionId: session.id,
+                startTime: session.startTime.toISOString(),
+                endTime: session.endTime?.toISOString(),
+                locationId: session.locationId,
+                locationName: session.location.name,
+                terminalId: session.posTerminalId,
+                userId: session.userId,
+                userName: `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim(),
+                status: session.status,
+                startingCash: session.startingCash.toFixed(2),
+                endingCash: session.endingCash?.toFixed(2),
+                calculatedCash: session.calculatedCash?.toFixed(2) ?? expectedCash.toFixed(2),
+                difference: session.difference?.toFixed(2),
+                totalCashSales: totalCashSales.toFixed(2),
+                totalTransactions: session.transactions.length,
+            };
+        });
+
+        logger.info(`POS session report fetched successfully. Items: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching POS session report`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve POS session report.');
+    }
+};
+
+export const getSalesByStaff = async (tenantId: string, params: Pick<ReportQueryDto, 'startDate' | 'endDate' | 'locationId'>): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getSalesByStaff', tenantId, params };
+    const { currentRange } = getDateRange(params.startDate ? 'custom' : undefined, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        const orders = await prisma.order.groupBy({
+            by: ['userId'],
+            _sum: { totalAmount: true },
+            _count: { id: true },
+            where: {
+                tenantId,
+                status: { in: [OrderStatus.COMPLETED, OrderStatus.SHIPPED] },
+                createdAt: { gte: start, lte: end },
+                ...(params.locationId ? { locationId: params.locationId } : {}),
+            },
+        });
+
+        const userIds = orders.map((o) => o.userId).filter((id) => id !== null) as string[];
+        const users = await prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, firstName: true, lastName: true },
+        });
+
+        const userMap = new Map(users.map((u) => [u.id, `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Unknown User']));
+
+        const reportItems = orders.map((order) => {
+            const grossSales = order._sum.totalAmount ?? new Prisma.Decimal(0);
+            const totalOrders = order._count.id;
+
+            return {
+                userId: order.userId ?? 'UNKNOWN',
+                staffName: userMap.get(order.userId!) ?? 'Unknown Staff',
+                totalOrders,
+                grossSales: grossSales.toFixed(2),
+                netSales: grossSales.toFixed(2), // Net sales calculation requires refund linking which is complex here
+                averageOrderValue: totalOrders > 0 ? grossSales.dividedBy(totalOrders).toFixed(2) : "0.00",
+            };
+        });
+
+        logger.info(`Sales by staff fetched successfully. Staff count: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching sales by staff`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve sales by staff.');
+    }
+};
+
+export const getTaxSummary = async (tenantId: string, params: Pick<ReportQueryDto, 'startDate' | 'endDate' | 'locationId'>): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getTaxSummary', tenantId, params };
+    const { currentRange } = getDateRange(params.startDate ? 'custom' : undefined, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        // Aggregate by tax rate from OrderItems
+        const taxGroups = await prisma.orderItem.groupBy({
+            by: ['taxRate'],
+            _sum: { taxAmount: true, lineTotal: true },
+            where: {
+                tenantId,
+                order: {
+                    status: { in: [OrderStatus.COMPLETED, OrderStatus.SHIPPED] },
+                    createdAt: { gte: start, lte: end },
+                    ...(params.locationId ? { locationId: params.locationId } : {}),
+                },
+            },
+        });
+
+        const reportItems = taxGroups.map((group) => ({
+            taxRate: group.taxRate.mul(100).toFixed(2) + '%', // Convert decimal to percentage string
+            taxableSales: (group._sum.lineTotal ?? new Prisma.Decimal(0)).toFixed(2),
+            taxCollected: (group._sum.taxAmount ?? new Prisma.Decimal(0)).toFixed(2),
+            reportingPeriod: { start: start.toISOString(), end: end.toISOString() },
+        }));
+
+        logger.info(`Tax summary fetched successfully. Groups: ${reportItems.length}`, logContext);
+        return reportItems;
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching tax summary`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve tax summary.');
+    }
+};
+
+export const getSalesChartData = async (tenantId: string, params: Pick<ReportQueryDto, 'startDate' | 'endDate' | 'locationId' | 'period'>): Promise<any[]> => {
+    const logContext: LogContext = { function: 'getSalesChartData', tenantId, params };
+    // Default to last 30 days if no specific range provided for the chart
+    const period = params.startDate ? 'custom' : (params.period || 'last_30_days');
+    const { currentRange } = getDateRange(period, params.startDate, params.endDate);
+    const { start, end } = currentRange;
+
+    try {
+        const orders = await prisma.order.findMany({
+            where: {
+                tenantId,
+                status: { in: [OrderStatus.COMPLETED, OrderStatus.SHIPPED] },
+                createdAt: { gte: start, lte: end },
+                ...(params.locationId ? { locationId: params.locationId } : {}),
+            },
+            select: {
+                createdAt: true,
+                totalAmount: true,
+            },
+            orderBy: { createdAt: 'asc' }
+        });
+
+        const dailyMap = new Map<string, number>();
+
+        // Fill dates
+        const currentDate = new Date(start);
+        const endDateObj = new Date(end);
+
+        let safetyCount = 0;
+        while (currentDate <= endDateObj && safetyCount < 3660) {
+            const dateKey = currentDate.toISOString().split('T')[0];
+            dailyMap.set(dateKey, 0);
+            currentDate.setDate(currentDate.getDate() + 1);
+            safetyCount++;
+        }
+
+        orders.forEach(order => {
+            const dateKey = order.createdAt.toISOString().split('T')[0];
+            if (dailyMap.has(dateKey)) {
+                const currentTotal = dailyMap.get(dateKey) || 0;
+                dailyMap.set(dateKey, currentTotal + (order.totalAmount ? Number(order.totalAmount) : 0));
+            } else {
+                const currentTotal = dailyMap.get(dateKey) || 0;
+                dailyMap.set(dateKey, currentTotal + (order.totalAmount ? Number(order.totalAmount) : 0));
+            }
+        });
+
+        const chartData = Array.from(dailyMap.entries()).map(([date, amount]) => ({
+            date,
+            sales: Number(amount.toFixed(2))
+        }));
+
+        logger.info(`Sales chart data fetched successfully. Data points: ${chartData.length}`, logContext);
+        return chartData;
+
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error fetching sales chart data`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve sales chart data.');
+    }
+};

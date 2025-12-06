@@ -189,6 +189,16 @@ const loginUserWithEmailAndPassword = async (
                         }
                     }
                 }
+            },
+            locations: {
+                select: {
+                    location: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    }
+                }
             }
         }
     });

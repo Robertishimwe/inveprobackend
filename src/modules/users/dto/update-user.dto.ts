@@ -36,6 +36,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsUUID('4', { each: true, message: 'Each location must be a valid UUID.' })
   locationIds?: string[]; // Optional: Update assigned locations
+
+  @IsArray()
+  @IsOptional()
+  @IsUUID('4', { each: true, message: 'Each role must be a valid UUID.' })
+  roleIds?: string[]; // Optional: Update assigned roles
 }
 
 // // src/modules/users/dto/update-user.dto.ts

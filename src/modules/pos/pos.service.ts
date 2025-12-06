@@ -21,6 +21,10 @@ import { orderService } from '@/modules/orders/order.service';
 
 type LogContext = { function?: string; tenantId?: string | null; userId?: string | null; sessionId?: string | null; terminalId?: string | null; locationId?: string | null; error?: any;[key: string]: any; };
 
+export interface EndSessionResult extends PosSession {
+    paymentSummary: Record<string, number>;
+}
+
 // --- Session Management ---
 
 /** Get current open session for user/terminal/location */
@@ -150,7 +154,44 @@ const startSession = async (data: StartSessionDto, userId: string, posTerminalId
 // };
 
 
-const endSession = async (sessionId: string, data: EndSessionDto, userId: string, posTerminalId: string, locationId: string, tenantId: string): Promise<PosSession> => {
+// Helper to calculate session financials
+const calculateSessionFinancials = async (tx: any, sessionId: string, startingCash: Prisma.Decimal) => {
+    const transactions = await tx.posSessionTransaction.findMany({
+        where: { posSessionId: sessionId }
+    });
+    let calculatedCash = startingCash; // Start with float
+    const paymentSummary: Record<string, number> = {};
+
+    transactions.forEach((t: any) => {
+        const amt = t.amount.toNumber();
+        paymentSummary[t.transactionType] = (paymentSummary[t.transactionType] || 0) + amt;
+
+        // Skip the starting float transaction if we are already starting with session.startingCash
+        if (t.transactionType === PosTransactionType.PAY_IN && t.notes === 'Starting float') {
+            return;
+        }
+        switch (t.transactionType) {
+            case PosTransactionType.PAY_IN:
+            case PosTransactionType.CASH_SALE:
+                calculatedCash = calculatedCash.plus(t.amount);
+                break;
+            case PosTransactionType.PAY_OUT:
+            case PosTransactionType.CASH_REFUND:
+                calculatedCash = calculatedCash.minus(t.amount);
+                break;
+            // Ignore non-cash transactions for CASH drawer calculation
+            case PosTransactionType.CARD_SALE:
+            case PosTransactionType.MOBILE_MONEY_SALE:
+            case PosTransactionType.CHECK_SALE:
+            case PosTransactionType.BANK_TRANSFER_SALE:
+            case PosTransactionType.OTHER_SALE:
+                break;
+        }
+    });
+    return { calculatedCash, paymentSummary };
+};
+
+const endSession = async (sessionId: string, data: EndSessionDto, userId: string, posTerminalId: string, locationId: string, tenantId: string): Promise<EndSessionResult> => {
     const logContext: LogContext = { function: 'endSession', sessionId, userId, posTerminalId, locationId, tenantId, endingCash: data.endingCash };
 
     try {
@@ -162,40 +203,9 @@ const endSession = async (sessionId: string, data: EndSessionDto, userId: string
                 throw new ApiError(httpStatus.NOT_FOUND, 'Active session not found for this user/terminal/location, or session ID is incorrect.');
             }
 
-            // Calculate expected cash
-            const transactions = await tx.posSessionTransaction.findMany({
-                where: { posSessionId: sessionId }
-            });
-            let calculatedCash = session.startingCash; // Start with float
-
-            // --- FIX: Use explicit comparisons or switch statement ---
-            transactions.forEach(t => {
-                // Skip the starting float transaction if we are already starting with session.startingCash
-                if (t.transactionType === PosTransactionType.PAY_IN && t.notes === 'Starting float') {
-                    return;
-                }
-                switch (t.transactionType) {
-                    case PosTransactionType.PAY_IN:
-                    case PosTransactionType.CASH_SALE:
-                        calculatedCash = calculatedCash.plus(t.amount);
-                        break;
-                    case PosTransactionType.PAY_OUT:
-                    case PosTransactionType.CASH_REFUND:
-                        calculatedCash = calculatedCash.minus(t.amount);
-                        break;
-                    // Default case is optional - handle unexpected types?
-                    // default:
-                    //     logger.warn(`Encountered unexpected PosTransactionType: ${t.transactionType} in session ${sessionId}`);
-                }
-                /* // Alternative using if/else if
-                if (t.transactionType === PosTransactionType.PAY_IN || t.transactionType === PosTransactionType.CASH_SALE) {
-                    calculatedCash = calculatedCash.plus(t.amount);
-                } else if (t.transactionType === PosTransactionType.PAY_OUT || t.transactionType === PosTransactionType.CASH_REFUND) {
-                    calculatedCash = calculatedCash.minus(t.amount);
-                }
-                */
-            });
-            // --- End of FIX ---
+            // Calculate expected cash and summary
+            // Calculate expected cash and summary
+            const { calculatedCash, paymentSummary } = await calculateSessionFinancials(tx, sessionId, session.startingCash);
 
 
             const endingCashDecimal = new Prisma.Decimal(data.endingCash);
@@ -215,7 +225,10 @@ const endSession = async (sessionId: string, data: EndSessionDto, userId: string
                     notes: data.notes ? `${session.notes ?? ''}\nEnd Note: ${data.notes}`.trim() : session.notes
                 }
             });
-            return updatedSession;
+            return {
+                ...updatedSession,
+                paymentSummary
+            };
         });
 
         logger.info(`POS session ended successfully`, logContext);
@@ -232,7 +245,7 @@ const endSession = async (sessionId: string, data: EndSessionDto, userId: string
     }
 };
 /** Reconcile a CLOSED POS Session */
-const reconcileSession = async (sessionId: string, tenantId: string): Promise<PosSession> => {
+const reconcileSession = async (sessionId: string, tenantId: string, notes?: string): Promise<PosSession & { paymentSummary: any }> => {
     const logContext: LogContext = { function: 'reconcileSession', sessionId, tenantId };
     const session = await prisma.posSession.findFirst({
         where: { id: sessionId, tenantId, status: PosSessionStatus.CLOSED }
@@ -240,12 +253,21 @@ const reconcileSession = async (sessionId: string, tenantId: string): Promise<Po
     if (!session) throw new ApiError(httpStatus.NOT_FOUND, 'Closed session not found for reconciliation.');
 
     try {
+        const { paymentSummary } = await calculateSessionFinancials(prisma, sessionId, session.startingCash);
+
         const reconciledSession = await prisma.posSession.update({
             where: { id: sessionId },
-            data: { status: PosSessionStatus.RECONCILED }
+            data: {
+                status: PosSessionStatus.RECONCILED,
+                notes: notes ? `${session.notes ?? ''}\nReconciliation Note: ${notes}`.trim() : session.notes
+            }
         });
         logger.info(`POS session reconciled successfully`, logContext);
-        return reconciledSession;
+
+        return {
+            ...reconciledSession,
+            paymentSummary
+        };
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error reconciling POS session`, logContext);
@@ -995,18 +1017,48 @@ const processPosCheckout = async (
             });
             logContext.orderId = order.id; logContext.orderNumber = order.orderNumber;
 
-            // 9. Log CASH payment(s) to POS Session Transaction log
-            const cashPayments = checkoutData.payments.filter(p => p.paymentMethod === PaymentMethod.CASH);
-            for (const cashPayment of cashPayments) {
-                await tx.posSessionTransaction.create({
-                    data: {
-                        tenantId, posSessionId: sessionId,
-                        transactionType: PosTransactionType.CASH_SALE,
-                        amount: new Prisma.Decimal(cashPayment.amount), // Amount paid
-                        relatedOrderId: order.id,
-                        notes: `Cash payment for Order ${order.orderNumber}`
-                    }
-                });
+            // 9. Log ALL payments to POS Session Transaction log
+            // const cashPayments = checkoutData.payments.filter(p => p.paymentMethod === PaymentMethod.CASH);
+            for (const payment of checkoutData.payments) {
+                let transactionType: PosTransactionType | undefined;
+
+                switch (payment.paymentMethod) {
+                    case PaymentMethod.CASH:
+                        transactionType = PosTransactionType.CASH_SALE;
+                        break;
+                    case PaymentMethod.CREDIT_CARD:
+                    case PaymentMethod.DEBIT_CARD:
+                        transactionType = PosTransactionType.CARD_SALE;
+                        break;
+                    case PaymentMethod.MOBILE_MONEY:
+                        transactionType = PosTransactionType.MOBILE_MONEY_SALE;
+                        break;
+                    case PaymentMethod.CHECK:
+                        transactionType = PosTransactionType.CHECK_SALE;
+                        break;
+                    case PaymentMethod.BANK_TRANSFER:
+                        transactionType = PosTransactionType.BANK_TRANSFER_SALE;
+                        break;
+                    case PaymentMethod.OTHER:
+                        transactionType = PosTransactionType.OTHER_SALE;
+                        break;
+                    // Add default or ignore specific types if not relevant for session logs
+                    default:
+                        // Log usage warning but map to OTHER_SALE or skip?
+                        transactionType = PosTransactionType.OTHER_SALE;
+                }
+
+                if (transactionType) {
+                    await tx.posSessionTransaction.create({
+                        data: {
+                            tenantId, posSessionId: sessionId,
+                            transactionType: transactionType,
+                            amount: new Prisma.Decimal(payment.amount), // Amount paid
+                            relatedOrderId: order.id,
+                            notes: `${payment.paymentMethod} payment for Order ${order.orderNumber}`
+                        }
+                    });
+                }
             }
 
             // 10. Record Stock Movements (Decrease OnHand for tracked items) & Prepare Transaction Logs
@@ -1103,7 +1155,8 @@ const processPosCheckout = async (
 
 
 /** Get details of a specific POS Session */
-const getSessionById = async (sessionId: string, tenantId: string): Promise<PosSession | null> => {
+/** Get details of a specific POS Session */
+const getSessionById = async (sessionId: string, tenantId: string): Promise<(PosSession & { paymentSummary: any }) | null> => {
     const logContext: LogContext = { function: 'getSessionById', sessionId, tenantId };
     try {
         const session = await prisma.posSession.findFirst({
@@ -1111,12 +1164,15 @@ const getSessionById = async (sessionId: string, tenantId: string): Promise<PosS
             include: {
                 user: { select: { id: true, firstName: true, lastName: true } },
                 location: { select: { id: true, name: true } }
-                // transactions: { orderBy: { timestamp: 'asc' }} // Maybe add pagination later
             }
         });
         if (!session) { logger.warn(`POS Session not found or tenant mismatch`, logContext); return null; }
+
+        // Calculate Summary
+        const { paymentSummary } = await calculateSessionFinancials(prisma, sessionId, session.startingCash);
+
         logger.debug(`POS Session found successfully`, logContext);
-        return session;
+        return { ...session, paymentSummary };
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error fetching POS Session by ID`, logContext);
@@ -1156,6 +1212,104 @@ const querySessions = async (filter: Prisma.PosSessionWhereInput, orderBy: Prism
 };
 
 
+// --- Suspend/Resume Logic ---
+/** Suspend an incomplete order */
+import { PosSuspendDto } from './dto/pos-suspend.dto';
+
+// ... (other imports)
+
+const suspendOrder = async (
+    checkoutData: PosCheckoutDto | PosSuspendDto,
+    sessionId: string,
+    tenantId: string,
+    userId: string,
+    posTerminalId: string,
+    locationId: string
+): Promise<OrderWithDetails> => {
+    const logContext: LogContext = { function: 'suspendOrder', tenantId, userId, sessionId, locationId };
+
+    // Validate session
+    const currentSession = await getCurrentSession(userId, posTerminalId, locationId, tenantId);
+    if (!currentSession || currentSession.id !== sessionId) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or inactive POS session.');
+    }
+
+    const createdOrder = await prisma.$transaction(async (tx) => {
+        // Create Order Header
+        const orderNumber = await orderService.generateOrderNumber(tenantId);
+
+        let subtotal = new Prisma.Decimal(0);
+        // Calculate subtotal from items
+        checkoutData.items.forEach(item => {
+            const qty = new Prisma.Decimal(item.quantity);
+            const price = item.unitPrice ? new Prisma.Decimal(item.unitPrice) : new Prisma.Decimal(0);
+            subtotal = subtotal.plus(qty.times(price));
+        });
+
+        const discount = new Prisma.Decimal(checkoutData.discountAmount ?? 0);
+        const total = subtotal.minus(discount);
+
+        const order = await tx.order.create({
+            data: {
+                tenantId, orderNumber, customerId: checkoutData.customerId, locationId, posTerminalId, userId,
+                orderType: OrderType.POS,
+                status: OrderStatus.SUSPENDED,
+                orderDate: new Date(),
+                subtotal: subtotal,
+                discountAmount: discount,
+                taxAmount: new Prisma.Decimal(0), // Placeholder
+                totalAmount: total,
+                currencyCode: 'USD',
+                notes: checkoutData.notes,
+                isBackordered: false,
+                items: {
+                    create: checkoutData.items.map(item => ({
+                        tenantId, // Add tenantId here
+                        productSnapshot: {},
+                        quantity: new Prisma.Decimal(item.quantity),
+                        unitPrice: new Prisma.Decimal(item.unitPrice ?? 0),
+                        originalUnitPrice: new Prisma.Decimal(item.unitPrice ?? 0),
+                        lineTotal: new Prisma.Decimal(Number(item.quantity) * (Number(item.unitPrice) ?? 0)),
+                        product: { connect: { id: item.productId } }
+                    }))
+                }
+            },
+            include: {
+                items: { include: { product: true } },
+                customer: true,
+                payments: true
+            }
+        });
+
+        return order;
+    });
+
+    logger.info(`Order suspended successfully`, logContext);
+    // @ts-ignore
+    return createdOrder as unknown as OrderWithDetails;
+};
+
+/** Get suspended orders */
+const getSuspendedOrders = async (tenantId: string, locationId: string): Promise<OrderWithDetails[]> => {
+    return prisma.order.findMany({
+        where: {
+            tenantId,
+            locationId,
+            status: OrderStatus.SUSPENDED
+        },
+        include: {
+            customer: { select: { id: true, firstName: true, lastName: true, email: true } },
+            location: { select: { id: true, name: true } },
+            user: { select: { id: true, firstName: true, lastName: true } },
+            items: { include: { product: { select: { id: true, sku: true, name: true, basePrice: true } } } },
+            payments: true,
+            initiatedReturns: true,
+            returnForExchange: true
+        },
+        orderBy: { createdAt: 'desc' }
+    }) as unknown as OrderWithDetails[];
+};
+
 export const posService = {
     // Session Management
     getCurrentSession,
@@ -1167,4 +1321,7 @@ export const posService = {
     querySessions,
     // Checkout
     processPosCheckout,
+    // Suspend
+    suspendOrder,
+    getSuspendedOrders
 };

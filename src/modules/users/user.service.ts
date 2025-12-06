@@ -104,7 +104,7 @@ const createUser = async (userData: CreateUserDto, tenantId: string): Promise<Sa
                 firstName: userData.firstName,
                 lastName: userData.lastName,
                 phoneNumber: userData.phoneNumber,
-                isActive: true, // Default new users to active
+                isActive: userData.isActive !== undefined ? userData.isActive : true,
                 roles: { // Connect initial roles
                     create: validRoleIds.map(roleId => ({
                         role: { connect: { id: roleId } },
@@ -351,9 +351,58 @@ const updateUserById = async (
 
     // 4. Perform the update
     try {
+        // Prepare the update payload
+        const updatePayload: Prisma.UserUpdateInput = { ...dataToUpdate };
+
+        // Handle location updates if provided
+        if (updateData.locationIds) {
+            // Validate location IDs first
+            const validLocations = await prisma.location.findMany({
+                where: { id: { in: updateData.locationIds }, tenantId: tenantId },
+                select: { id: true }
+            });
+
+            if (validLocations.length !== updateData.locationIds.length) {
+                const invalidIds = updateData.locationIds.filter(reqId => !validLocations.some(validLoc => validLoc.id === reqId));
+                logger.warn(`User update failed: Invalid location ID(s) provided`, { ...logContext, invalidIds });
+                throw new ApiError(httpStatus.BAD_REQUEST, `Invalid location ID(s) provided: ${invalidIds.join(', ')}`);
+            }
+
+            // Replace existing locations with new set
+            updatePayload.locations = {
+                deleteMany: {}, // Remove all existing assignments
+                create: updateData.locationIds.map(locId => ({
+                    location: { connect: { id: locId } }
+                }))
+            };
+        }
+
+        // Handle role updates if provided
+        if (updateData.roleIds) {
+            // Validate role IDs first
+            const validRoles = await prisma.role.findMany({
+                where: { id: { in: updateData.roleIds }, tenantId: tenantId },
+                select: { id: true }
+            });
+
+            if (validRoles.length !== updateData.roleIds.length) {
+                const invalidIds = updateData.roleIds.filter(reqId => !validRoles.some(validRole => validRole.id === reqId));
+                logger.warn(`User update failed: Invalid role ID(s) provided`, { ...logContext, invalidIds });
+                throw new ApiError(httpStatus.BAD_REQUEST, `Invalid role ID(s) provided: ${invalidIds.join(', ')}`);
+            }
+
+            // Replace existing roles with new set
+            updatePayload.roles = {
+                deleteMany: {}, // Remove all existing assignments
+                create: updateData.roleIds.map(rId => ({
+                    role: { connect: { id: rId } }
+                }))
+            };
+        }
+
         const updatedUser = await prisma.user.update({
             where: { id: userId }, // Tenant verified by initial check
-            data: dataToUpdate,
+            data: updatePayload,
             select: { // Select consistent with SafeUserWithRoles
                 id: true, tenantId: true, email: true, firstName: true, lastName: true,
                 phoneNumber: true, isActive: true, createdAt: true, updatedAt: true,
@@ -365,6 +414,7 @@ const updateUserById = async (
         logger.info(`User updated successfully`, logContext);
         return updatedUser as SafeUserWithRoles;
     } catch (error: any) {
+        if (error instanceof ApiError) throw error;
         logContext.error = error;
         logger.error(`Error updating user`, logContext);
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
@@ -433,6 +483,62 @@ const removeRoleFromUser = async (userId: string, roleId: string, tenantId: stri
 };
 
 /**
+ * Assign a specific location to a specific user.
+ */
+const assignLocationToUser = async (userId: string, locationId: string, tenantId: string): Promise<void> => {
+    const logContext: LogContext = { function: 'assignLocationToUser', userId, locationId, tenantId };
+
+    try {
+        await prisma.$transaction(async (tx) => {
+            const userExists = await tx.user.count({ where: { id: userId, tenantId } });
+            if (!userExists) throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+            const locationExists = await tx.location.count({ where: { id: locationId, tenantId } });
+            if (!locationExists) throw new ApiError(httpStatus.NOT_FOUND, 'Location not found.');
+
+            await tx.userLocation.upsert({
+                where: { userId_locationId: { userId, locationId } },
+                create: { userId, locationId },
+                update: {}, // No fields to update on the join table itself
+            });
+        });
+        logger.info(`Location ${locationId} assigned successfully to user ${userId}`, logContext);
+    } catch (error: any) {
+        if (error instanceof ApiError) throw error;
+        logContext.error = error;
+        logger.error(`Error assigning location to user`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to assign location.');
+    }
+};
+
+/**
+ * Remove a specific location from a specific user.
+ */
+const removeLocationFromUser = async (userId: string, locationId: string, tenantId: string): Promise<void> => {
+    const logContext: LogContext = { function: 'removeLocationFromUser', userId, locationId, tenantId };
+
+    // Verify user exists first for better error message
+    const userExists = await prisma.user.count({ where: { id: userId, tenantId } });
+    if (!userExists) throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+
+    try {
+        const deleteResult = await prisma.userLocation.deleteMany({
+            where: { userId: userId, locationId: locationId } // Target specific assignment
+        });
+
+        if (deleteResult.count === 0) {
+            logger.warn(`Location assignment not found for user ${userId} and location ${locationId}. No action taken.`, logContext);
+            // Don't throw error, operation is idempotent
+        } else {
+            logger.info(`Location ${locationId} removed successfully from user ${userId}`, logContext);
+        }
+    } catch (error: any) {
+        logContext.error = error;
+        logger.error(`Error removing location from user`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to remove location.');
+    }
+};
+
+/**
  * Soft delete a user by ID (mark as inactive).
  */
 const deleteUserById = async (userId: string, tenantId: string, requestingUserId: string): Promise<void> => {
@@ -486,5 +592,7 @@ export const userService = {
     deleteUserById,
     assignRoleToUser, // Added
     removeRoleFromUser, // Added
+    assignLocationToUser, // Added
+    removeLocationFromUser, // Added
     createUnassignedUser
 };

@@ -1,5 +1,5 @@
 // src/modules/orders/dto/order-item.dto.ts
-import { IsUUID, IsNotEmpty, IsNumber, Min, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsNumber, Min, IsOptional, IsString, MaxLength, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateOrderItemDto {
@@ -26,7 +26,10 @@ export class CreateOrderItemDto {
 
     @IsString() @IsOptional() notes?: string;
     // customAttributes could be added if needed per line item
+    @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Type(() => Number) @IsOptional()
     discountAmount?: number; // $ amount discount for this line
+
+    @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(1) @Type(() => Number) @IsOptional()
     discountPercent?: number; // % discount (e.g., 0.10 for 10%) for this line
-    
+
 }

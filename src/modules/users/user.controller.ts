@@ -48,7 +48,7 @@ const getTenantLessUsers = catchAsync(async (req: Request, res: Response) => {
     // const filter: Omit<Prisma.UserWhereInput, 'tenantId'> = {};
     const filter: Prisma.UserWhereInput = {
         tenantId: null, // <-- Ensure you're only getting tenant-less users
-      };
+    };
 
     if (filterParams.firstName) filter.firstName = { contains: filterParams.firstName as string, mode: 'insensitive' };
     if (filterParams.lastName) filter.lastName = { contains: filterParams.lastName as string, mode: 'insensitive' };
@@ -300,19 +300,19 @@ const updateUser = catchAsync(async (req: Request, res: Response) => {
     }
     if (requestingUser.id === userId && !requestingUser.effectivePermissions.has('user:update:own') && !requestingUser.effectivePermissions.has('user:update:any')) {
         // If updating self, need 'user:update:own' OR 'user:update:any'
-         throw new ApiError(httpStatus.FORBIDDEN, "Insufficient permissions to update own profile");
+        throw new ApiError(httpStatus.FORBIDDEN, "Insufficient permissions to update own profile");
     }
 
     // Check if trying to update restricted fields (like isActive)
     if (req.body.isActive !== undefined) {
-         // Prevent self-deactivation via this endpoint
-         if (requestingUser.id === userId) {
-             throw new ApiError(httpStatus.FORBIDDEN, "Cannot change own active status via this endpoint.");
-         }
-         // Check if user has permission to change activity status for others
-         if (!requestingUser.effectivePermissions.has('user:update:activity')) {
-             throw new ApiError(httpStatus.FORBIDDEN, "Insufficient permissions to change user active status.");
-         }
+        // Prevent self-deactivation via this endpoint
+        if (requestingUser.id === userId) {
+            throw new ApiError(httpStatus.FORBIDDEN, "Cannot change own active status via this endpoint.");
+        }
+        // Check if user has permission to change activity status for others
+        if (!requestingUser.effectivePermissions.has('user:update:activity')) {
+            throw new ApiError(httpStatus.FORBIDDEN, "Insufficient permissions to change user active status.");
+        }
     }
     // --- End Permission Checks ---
 
@@ -369,15 +369,46 @@ const removeRole = catchAsync(async (req: Request, res: Response) => {
 });
 
 
+// --- NEW: Location Assignment Controllers ---
+
+/**
+ * Controller to assign a location to a user.
+ */
+const assignLocation = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req);
+    const { userId, locationId } = req.params; // Get user and location from URL parameters
+
+    // Permission check ('user:assign:locations') handled by middleware
+
+    await userService.assignLocationToUser(userId, locationId, tenantId);
+    res.status(httpStatus.OK).send({ message: 'Location assigned successfully.' });
+});
+
+/**
+ * Controller to remove a location from a user.
+ */
+const removeLocation = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req);
+    const { userId, locationId } = req.params; // Get user and location from URL parameters
+
+    // Permission check ('user:assign:locations') handled by middleware
+
+    await userService.removeLocationFromUser(userId, locationId, tenantId);
+    res.status(httpStatus.NO_CONTENT).send(); // 204 No Content on successful removal
+});
+
+
 // Export all controller methods
 export const userController = {
     createUser,
     getUsers,
     getUser,
     updateUser,
-    deleteUser, 
-    assignRole, 
+    deleteUser,
+    assignRole,
     removeRole,
+    assignLocation, // Added
+    removeLocation, // Added
     getTenantLessUsers,
     createUnassignedUser,
     getAllUsersFromAllTenants

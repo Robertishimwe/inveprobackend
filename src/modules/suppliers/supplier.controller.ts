@@ -17,17 +17,28 @@ const createSupplier = catchAsync(async (req: Request, res: Response) => {
 
 const getSuppliers = catchAsync(async (req: Request, res: Response) => {
     const tenantId = getTenantIdFromRequest(req);
-    const filterParams = pick(req.query, ['name', 'email', 'phone', 'isActive']);
+    const filterParams = pick(req.query, ['name', 'email', 'phone', 'isActive', 'search']);
     const options = pick(req.query, ['sortBy', 'limit', 'page']);
 
     const filter: Prisma.SupplierWhereInput = { tenantId };
+
+    if (filterParams.search) {
+        const search = filterParams.search as string;
+        filter.OR = [
+            { name: { contains: search, mode: 'insensitive' } },
+            { contactName: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search, mode: 'insensitive' } },
+        ];
+    }
+
     if (filterParams.name) filter.name = { contains: filterParams.name as string, mode: 'insensitive' };
     if (filterParams.email) filter.email = { contains: filterParams.email as string, mode: 'insensitive' };
     if (filterParams.phone) filter.phone = { contains: filterParams.phone as string };
     if (filterParams.isActive !== undefined) filter.isActive = filterParams.isActive === 'true';
 
     const orderBy: Prisma.SupplierOrderByWithRelationInput[] = [];
-     if (options.sortBy) {
+    if (options.sortBy) {
         (options.sortBy as string).split(',').forEach(sortOption => {
             const [key, order] = sortOption.split(':');
             if (key && (order === 'asc' || order === 'desc')) {

@@ -8,7 +8,8 @@ import {
   IsArray,
   ArrayNotEmpty,
   IsUUID,
-  Matches
+  Matches,
+  IsBoolean
 } from 'class-validator';
 
 export class CreateUserDto {
@@ -51,6 +52,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsUUID('4', { each: true, message: 'Each location must be a valid UUID.' })
   locationIds?: string[]; // Optional: Assign user to specific locations
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 
   // tenantId is added by the service/context, not expected in request body
   // isActive defaults to true in the service/schema

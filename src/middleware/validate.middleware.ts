@@ -37,47 +37,53 @@ const formatValidationErrors = (errors: ValidationError[]): string[] => {
  * @returns An Express RequestHandler middleware function.
  */
 const validateRequest = <T extends object>(
-    dtoClass: ClassConstructor<T>, // Use ClassConstructor for type safety
-    source: 'body' | 'query' | 'params' = 'body',
-    skipMissingProperties = false // Allow optional skipping of missing properties
+  dtoClass: ClassConstructor<T>, // Use ClassConstructor for type safety
+  source: 'body' | 'query' | 'params' = 'body',
+  skipMissingProperties = false // Allow optional skipping of missing properties
 ): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    // Get the data object from the specified request source
-    const dataToValidate = req[source];
+    try {
+      // Get the data object from the specified request source
+      const dataToValidate = req[source];
 
-    // Use plainToInstance to create an instance of the DTO class.
-    // This applies transformation decorators (e.g., @Type, @Transform).
-    // Pass `exposeUnsetFields: false` if you want to ensure only defined fields are present after transformation.
-    const dtoInstance = plainToInstance(dtoClass, dataToValidate, {
+      // Use plainToInstance to create an instance of the DTO class.
+      // This applies transformation decorators (e.g., @Type, @Transform).
+      // Pass `exposeUnsetFields: false` if you want to ensure only defined fields are present after transformation.
+      const dtoInstance = plainToInstance(dtoClass, dataToValidate, {
         // excludeExtraneousValues: true, // Use if you want to strip properties not in DTO *after* transformation
-    });
+      });
 
-    // Perform validation using class-validator
-    const errors = await validate(dtoInstance, {
+      // Perform validation using class-validator
+      const errors = await validate(dtoInstance, {
         skipMissingProperties,   // Control validation of missing fields
         whitelist: true,         // Remove properties not defined in DTO (incoming data)
         forbidNonWhitelisted: true, // Throw error if extra properties are present after whitelist
         forbidUnknownValues: true, // Prevent unknown values (similar to forbidNonWhitelisted)
-    });
+      });
 
-    // If validation errors are found
-    if (errors.length > 0) {
-      // Format the errors into a readable list
-      const errorMessages = formatValidationErrors(errors);
-      const message = `Input validation failed: ${errorMessages.join(', ')}`;
-      logger.warn(`Validation Error (${req.method} ${req.originalUrl}): ${message}`);
-      // Pass an ApiError to the global error handler
-      return next(new ApiError(httpStatus.BAD_REQUEST, message, true, { errors: errorMessages }));
+      // If validation errors are found
+      if (errors.length > 0) {
+        // Format the errors into a readable list
+        const errorMessages = formatValidationErrors(errors);
+        const message = `Input validation failed: ${errorMessages.join(', ')}`;
+        logger.warn(`Validation Error (${req.method} ${req.originalUrl}): ${message}`);
+        // Pass an ApiError to the global error handler
+        return next(new ApiError(httpStatus.BAD_REQUEST, message, true, { errors: errorMessages }));
+      }
+
+      // Validation successful!
+      // Replace the original request data (e.g., req.body) with the validated and potentially transformed DTO instance.
+      // This ensures controllers receive clean, typed, and transformed data.
+      req[source] = dtoInstance;
+
+      // Proceed to the next middleware or route handler
+      next();
+    } catch (error: any) {
+
+      next(new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Validation wrapper failed: ${error.message}`));
     }
-
-    // Validation successful!
-    // Replace the original request data (e.g., req.body) with the validated and potentially transformed DTO instance.
-    // This ensures controllers receive clean, typed, and transformed data.
-    req[source] = dtoInstance;
-
-    // Proceed to the next middleware or route handler
-    next();
   };
 };
+
 
 export default validateRequest;

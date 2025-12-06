@@ -12,6 +12,7 @@ import { Prisma, ReturnStatus } from '@prisma/client'; // Import Prisma types an
  * Controller to handle initiating/creating a new return.
  */
 const createReturn = catchAsync(async (req: Request, res: Response) => {
+
     const tenantId = getTenantIdFromRequest(req); // Tenant scope from auth
     const userId = req.user!.id; // User processing the return (from auth)
     // req.body validated against CreateReturnDto by middleware
@@ -49,19 +50,19 @@ const getReturns = catchAsync(async (req: Request, res: Response) => {
     if (filterParams.returnNumber) filter.returnNumber = { contains: filterParams.returnNumber as string, mode: 'insensitive' };
     // Validate status against enum values
     if (filterParams.status && Object.values(ReturnStatus).includes(filterParams.status as ReturnStatus)) {
-         filter.status = filterParams.status as ReturnStatus;
+        filter.status = filterParams.status as ReturnStatus;
     } else if (filterParams.status) {
-         throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(ReturnStatus).join(', ')}`);
+        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(ReturnStatus).join(', ')}`);
     }
 
     // Date filtering for returnDate
-     if (filterParams.dateFrom || filterParams.dateTo) {
+    if (filterParams.dateFrom || filterParams.dateTo) {
         filter.returnDate = {};
-         try {
+        try {
             if (filterParams.dateFrom) filter.returnDate.gte = new Date(filterParams.dateFrom as string);
             if (filterParams.dateTo) filter.returnDate.lte = new Date(filterParams.dateTo as string);
         } catch (e) {
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for return date filters. Use ISO 8601 format.');
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid date format for return date filters. Use ISO 8601 format.');
         }
     }
 
@@ -130,7 +131,7 @@ const updateReturn = catchAsync(async (req: Request, res: Response) => {
 
     // Ensure at least status or notes is provided for update
     if (status === undefined && notes === undefined) {
-         throw new ApiError(httpStatus.BAD_REQUEST, 'At least status or notes must be provided for update.');
+        throw new ApiError(httpStatus.BAD_REQUEST, 'At least status or notes must be provided for update.');
     }
 
     // Permission check ('order:manage:returns' or 'return:update') handled by middleware

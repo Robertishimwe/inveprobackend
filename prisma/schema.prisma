@@ -90,6 +90,7 @@ enum OrderStatus {
   CANCELLED          // Order was cancelled before completion
   RETURNED           // All items in the order have been returned
   PARTIALLY_RETURNED // Some items in the order have been returned
+  SUSPENDED          // Order is partly created but put on hold (POS)
 }
 
 enum PaymentMethod {
@@ -100,6 +101,7 @@ enum PaymentMethod {
   STORE_CREDIT
   BANK_TRANSFER
   CHECK // Cheque
+  MOBILE_MONEY
   OTHER
 }
 
@@ -133,6 +135,11 @@ enum PosSessionStatus {
 
 enum PosTransactionType {
   CASH_SALE   // Cash received from sale payment
+  CARD_SALE
+  MOBILE_MONEY_SALE
+  CHECK_SALE
+  BANK_TRANSFER_SALE
+  OTHER_SALE
   CASH_REFUND // Cash given out for refund payment
   PAY_IN      // Adding cash to drawer (float, deposit correction)
   PAY_OUT     // Removing cash from drawer (expenses, bank deposit prep)

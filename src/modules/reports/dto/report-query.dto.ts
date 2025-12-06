@@ -12,23 +12,23 @@ export class ReportQueryDto {
     @IsOptional()
     endDate?: string;
 
-    @IsUUID('4', { message: 'locationId must be a valid UUID.'})
+    @IsUUID('4', { message: 'locationId must be a valid UUID.' })
     @IsOptional()
     locationId?: string;
 
-    @IsUUID('4', { message: 'productId must be a valid UUID.'})
+    @IsUUID('4', { message: 'productId must be a valid UUID.' })
     @IsOptional()
     productId?: string;
 
-    @IsUUID('4', { message: 'categoryId must be a valid UUID.'})
+    @IsUUID('4', { message: 'categoryId must be a valid UUID.' })
     @IsOptional()
     categoryId?: string;
 
-    @IsUUID('4', { message: 'customerId must be a valid UUID.'})
+    @IsUUID('4', { message: 'customerId must be a valid UUID.' })
     @IsOptional()
     customerId?: string;
 
-    @IsUUID('4', { message: 'userId must be a valid UUID.'})
+    @IsUUID('4', { message: 'userId must be a valid UUID.' })
     @IsOptional()
     userId?: string; // For sales by staff etc.
 
@@ -46,4 +46,26 @@ export class ReportQueryDto {
     // Time Period (for comparisons, e.g., 'today', 'yesterday', '7d', '30d', 'month', 'year')
     @IsString() @IsOptional()
     period?: string = 'today'; // Default period for KPIs maybe?
+
+    @IsUUID('4', { message: 'supplierId must be a valid UUID.' })
+    @IsOptional()
+    supplierId?: string;
+
+    @IsString() @IsOptional()
+    status?: string;
+
+    @IsString() @IsOptional()
+    poNumber?: string;
+
+    @IsString() @IsOptional()
+    orderNumber?: string;
+
+    @IsString() @IsOptional()
+    returnNumber?: string;
+
+    @IsString() @IsOptional()
+    quantityLte?: string; // string because it comes from query params, might need parsing
+
+    @IsString() @IsOptional()
+    quantityGte?: string;
 }

@@ -21,13 +21,21 @@ const getProducts = catchAsync(async (req: Request, res: Response) => {
     // Define allowed filters from query parameters
     const filterParams = pick(req.query, [
         'sku', 'name', 'brand', 'productType', 'isActive', 'isStockTracked',
-        'requiresSerialNumber', 'requiresLotTracking', 'requiresExpiryDate', 'taxable'
-        // Add more filterable fields as needed, e.g., categoryId (would require joining/filtering)
+        'requiresSerialNumber', 'requiresLotTracking', 'requiresExpiryDate', 'taxable',
+        'categoryId' // Added categoryId filter
     ]);
     const options = pick(req.query, ['sortBy', 'limit', 'page']);
 
     // Build Prisma WhereInput object, always including tenantId
     const filter: Prisma.ProductWhereInput = { tenantId };
+
+    if (filterParams.categoryId) {
+        filter.categories = {
+            some: {
+                categoryId: filterParams.categoryId as string
+            }
+        };
+    }
 
     if (filterParams.sku) filter.sku = { contains: filterParams.sku as string, mode: 'insensitive' };
     if (filterParams.name) filter.name = { contains: filterParams.name as string, mode: 'insensitive' };

@@ -44,7 +44,7 @@ app.use(helmet());
 app.use(cors({
     origin: env.CORS_ORIGIN === '*' ? '*' : env.CORS_ORIGIN.split(','), // Allow multiple origins from env var
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Location-Id', 'X-Terminal-Id'],
     credentials: true, // If you need to handle cookies or authorization headers
 }));
 // Handle CORS preflight requests
@@ -97,7 +97,7 @@ apiRouter.use('/categories', categoryRoutes);
 apiRouter.use('/customer-group', customerGroupRoutes);
 apiRouter.use('/purchase-orders', purchaseOrderRoutes);
 apiRouter.use('/permissions', permissionRoutes);
-apiRouter.use('/roles', roleRoutes);  
+apiRouter.use('/roles', roleRoutes);
 apiRouter.use('/tenants', tenantsRoutes); // Assuming you have a tenants module
 apiRouter.use('/returns', returnRoutes); // Example of another module
 apiRouter.use('/stock-counts', stockCountRoutes);
@@ -109,7 +109,7 @@ app.use('/api/v1', apiRouter);
 // --- 404 Handler ---
 // Catch requests to routes that don't exist
 app.use((req: Request, res: Response, next: NextFunction) => {
-  next(new ApiError(httpStatus.NOT_FOUND, `Not Found - ${req.originalUrl}`));
+    next(new ApiError(httpStatus.NOT_FOUND, `Not Found - ${req.originalUrl}`));
 });
 
 // --- Global Error Handling ---

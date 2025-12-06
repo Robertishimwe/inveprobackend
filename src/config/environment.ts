@@ -28,12 +28,12 @@ const envSchema = z.object({
   REDIS_URL: z.string().url({ message: "REDIS_URL must be a valid Redis connection string URL" }),
   JWT_SECRET: z.string().min(32, { message: "JWT_SECRET must be at least 32 characters long for security" }),
   // JWT_EXPIRES_IN: z.string().nonempty({ message: "JWT_EXPIRES_IN (e.g., '1d', '2h') cannot be empty" }).default('1d'),
-  JWT_EXPIRES_IN: z.coerce.number().int().positive(),
+  JWT_EXPIRES_IN: z.coerce.number().int().positive().default(3600),
   CORS_ORIGIN: z.string().default('*'),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']).default('info'),
   JWT_REFRESH_SECRET: z.string().min(32, { message: "JWT_REFRESH_SECRET must be at least 32 characters long" }),
   JWT_REFRESH_EXPIRES_IN_DAYS: z.coerce.number().int().positive().default(7),
-  PASSWORD_RESET_SECRET: z.string().min(32, { message: "PASSWORD_RESET_SECRET must be at least 32 characters long"}),
+  PASSWORD_RESET_SECRET: z.string().min(32, { message: "PASSWORD_RESET_SECRET must be at least 32 characters long" }),
   // PASSWORD_RESET_EXPIRES_IN: z.string().nonempty({ message: "PASSWORD_RESET_EXPIRES_IN cannot be empty" }).default('1h'),
   PASSWORD_RESET_EXPIRES_IN: z.coerce.number().int().positive(),
   REFRESH_TOKEN_COOKIE_NAME: z.string().default('refreshToken'),
@@ -44,6 +44,7 @@ const envSchema = z.object({
 });
 
 // Validate process.env against the schema
+console.log('DEBUG: JWT_EXPIRES_IN raw value:', process.env.JWT_EXPIRES_IN, 'Type:', typeof process.env.JWT_EXPIRES_IN);
 const parsedEnv = envSchema.safeParse(process.env);
 
 if (!parsedEnv.success) {

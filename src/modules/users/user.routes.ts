@@ -28,12 +28,12 @@ router.route('/')
     );
 
 router.post(
-        '/unassigned', // Specific sub-path for this action
-        // No ensureTenantContext here, as super admin might operate outside tenant scope
-        checkPermissions(['user:create:any']), // Requires a specific Super Admin permission
-        validateRequest(CreateUnassignedUserDto), // Validate specific DTO
-        userController.createUnassignedUser // Call dedicated controller
-    );
+    '/unassigned', // Specific sub-path for this action
+    // No ensureTenantContext here, as super admin might operate outside tenant scope
+    checkPermissions(['user:create:any']), // Requires a specific Super Admin permission
+    validateRequest(CreateUnassignedUserDto), // Validate specific DTO
+    userController.createUnassignedUser // Call dedicated controller
+);
 
 router.route('/:userId')
     .get(
@@ -42,7 +42,7 @@ router.route('/:userId')
         userController.getUser
     )
     .patch(
-         // Requires general update + potentially specific ones checked in controller
+        // Requires general update + potentially specific ones checked in controller
         checkPermissions(['user:update:own', 'user:update:any', 'user:update:activity']), // Ensure user has at least one relevant perm
         validateRequest(UpdateUserDto), // Validates basic fields
         userController.updateUser
@@ -75,6 +75,28 @@ router.delete(
     '/:userId/roles/:roleId',
     checkPermissions(['user:assign:roles']), // Same permission often used for remove
     userController.removeRole
+);
+
+/**
+ * POST /api/v1/users/:userId/locations/:locationId
+ * Assigns a specific location to a specific user.
+ * Requires 'user:assign:locations' permission.
+ */
+router.post(
+    '/:userId/locations/:locationId',
+    checkPermissions(['user:assign:locations']), // Specific permission for assignment
+    userController.assignLocation
+);
+
+/**
+ * DELETE /api/v1/users/:userId/locations/:locationId
+ * Removes a specific location from a specific user.
+ * Requires 'user:assign:locations' permission.
+ */
+router.delete(
+    '/:userId/locations/:locationId',
+    checkPermissions(['user:assign:locations']), // Same permission often used for remove
+    userController.removeLocation
 );
 
 router.get(

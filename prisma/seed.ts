@@ -39,6 +39,7 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'user:update:password:any', description: 'Reset password for any user' },
     { permissionKey: 'user:update:activity', description: 'Activate or deactivate any user account' },
     { permissionKey: 'user:assign:roles', description: 'Assign or unassign roles to users' },
+    { permissionKey: 'user:assign:locations', description: 'Assign or unassign locations to users' },
     { permissionKey: 'role:create', description: 'Create new custom roles' },
     { permissionKey: 'role:read', description: 'View available roles and their permissions' },
     { permissionKey: 'role:update', description: 'Modify custom roles and their assigned permissions' },
@@ -116,7 +117,9 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'order:manage:shipments', description: 'Create/update shipment details' },
     { permissionKey: 'order:manage:returns', description: 'Initiate or process customer returns/exchanges' },
     { permissionKey: 'return:read', description: 'View return details' },
+    { permissionKey: 'return:update', description: 'Update return details' },
     // Point of Sale (POS)
+    { permissionKey: 'pos:read', description: 'General read access for POS module' },
     { permissionKey: 'pos:session:start', description: 'Start a new POS session' },
     { permissionKey: 'pos:session:end', description: 'End own POS session' },
     { permissionKey: 'pos:session:reconcile', description: 'Reconcile a closed POS session' },
@@ -143,9 +146,14 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'report:view:pos', description: 'View POS specific reports' },
     { permissionKey: 'report:view:purchasing', description: 'View purchasing reports' },
     { permissionKey: 'report:view:customer', description: 'View customer reports' },
+    { permissionKey: 'report:read', description: 'General access to reports' },
     { permissionKey: 'report:export', description: 'Export report data' },
     { permissionKey: 'report:custom:manage', description: 'Manage custom reports' },
+    // Documents
+    { permissionKey: 'document:read', description: 'View system documents' },
     // Integration / Settings
+    { permissionKey: 'setting:read', description: 'View system settings' },
+    { permissionKey: 'notification:read', description: 'View notifications' },
     { permissionKey: 'integration:manage:payment', description: 'Configure payment processor integrations' },
     { permissionKey: 'integration:manage:shipping', description: 'Configure shipping provider integrations' },
     { permissionKey: 'integration:manage:accounting', description: 'Configure accounting software integrations' },
@@ -158,7 +166,7 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'tenant:read', description: 'View tenant details' },
     { permissionKey: 'tenant:update:any', description: 'Update tenant details without context (Super Admin)' },
     { permissionKey: 'tenant:update', description: 'Update tenant details' },
-    { permissionKey: 'tenant:delete:any', description: 'Delete tenant accounts without context (Super Admin)' },                    
+    { permissionKey: 'tenant:delete:any', description: 'Delete tenant accounts without context (Super Admin)' },
     { permissionKey: 'tenant:read', description: 'View tenant details (Super Admin)' },
     { permissionKey: 'tenant:update', description: 'Update tenant details (Super Admin)' },
     { permissionKey: 'tenant:delete', description: 'Delete tenant accounts (Super Admin)' },
@@ -185,7 +193,7 @@ async function upsertRoleWithPermissions(
     const permissionIdsToAssign = permissionsToAssign.map(p => p.id);
     const foundPermissionKeys = permissionsToAssign.map(p => p.permissionKey);
 
-    if(permissionIdsToAssign.length !== permissionKeys.length) {
+    if (permissionIdsToAssign.length !== permissionKeys.length) {
         const missingKeys = permissionKeys.filter(key => !foundPermissionKeys.includes(key));
         console.warn(`⚠️ Could not find all permissions for role '${roleName}'. Missing/Invalid keys: ${missingKeys.join(', ')}. Ensure they are in CORE_PERMISSIONS array.`);
     }
@@ -267,7 +275,8 @@ async function main() {
         'customer:create', 'customer:read', 'customer:update', 'customer:delete', 'group:read', 'customer:assign:group',
         'order:create', 'order:read:any', 'order:update', 'order:update:status', 'order:cancel', 'order:manage:returns', 'return:read',
         'pos:session:read:any', 'pos:session:reconcile',
-        'report:view:sales', 'report:view:inventory', 'report:view:pos', 'report:view:purchasing', 'report:view:customer', 'report:export',
+        'report:view:sales', 'report:view:inventory', 'report:view:pos', 'report:view:purchasing', 'report:view:customer', 'report:export', 'report:read',
+        'document:read', 'setting:read', 'notification:read',
         'template:manage',
     ];
     await upsertRoleWithPermissions(tenant.id, 'Manager', 'Manages store operations, staff, and inventory', true, managerPermissionKeys);
@@ -286,13 +295,13 @@ async function main() {
 
     // Warehouse Staff Role
     const warehousePermissionKeys = [
-         'dashboard:view', 'user:read:own', 'user:update:own', 'user:update:password:own',
-         'product:read', 'location:read',
-         'inventory:read:levels', 'inventory:read:transactions', 'inventory:adjust',
-         'inventory:transfer:create', 'inventory:transfer:ship', 'inventory:transfer:receive', 'inventory:transfer:read', 'inventory:transfer:cancel',
-         'inventory:count:start', 'inventory:count:enter',
-         'inventory:manage:serials', 'inventory:manage:lots',
-         'po:read', 'po:receive',
+        'dashboard:view', 'user:read:own', 'user:update:own', 'user:update:password:own',
+        'product:read', 'location:read',
+        'inventory:read:levels', 'inventory:read:transactions', 'inventory:adjust',
+        'inventory:transfer:create', 'inventory:transfer:ship', 'inventory:transfer:receive', 'inventory:transfer:read', 'inventory:transfer:cancel',
+        'inventory:count:start', 'inventory:count:enter',
+        'inventory:manage:serials', 'inventory:manage:lots',
+        'po:read', 'po:receive',
     ];
     await upsertRoleWithPermissions(tenant.id, 'Warehouse Staff', 'Manages warehouse stock, receiving, and transfers', true, warehousePermissionKeys);
 
@@ -318,36 +327,36 @@ async function main() {
     });
 
     if (!adminUser) {
-         // Create user if not found for this tenant
-         console.log(`Admin user not found for this tenant. Creating...`);
-         if (!SEED_ADMIN_PASSWORD) { throw new Error('Admin password not set for seeding.'); }
-         const hashedPassword = await bcrypt.hash(SEED_ADMIN_PASSWORD, 10);
-         adminUser = await prisma.user.create({
-             data: {
-                 email: SEED_ADMIN_EMAIL.toLowerCase(), passwordHash: hashedPassword,
-                 firstName: SEED_ADMIN_FIRSTNAME, lastName: SEED_ADMIN_LASTNAME,
-                 isActive: true, tenantId: tenant.id,
-                 roles: { create: [{ roleId: adminRole.id }] } // Assign Admin role via join table
-             },
-             include: { roles: { select: { roleId: true } } }
-         });
-         console.log(`✅ Admin user '${adminUser.email}' created for tenant ${tenant.id} and assigned Admin role.`);
+        // Create user if not found for this tenant
+        console.log(`Admin user not found for this tenant. Creating...`);
+        if (!SEED_ADMIN_PASSWORD) { throw new Error('Admin password not set for seeding.'); }
+        const hashedPassword = await bcrypt.hash(SEED_ADMIN_PASSWORD, 10);
+        adminUser = await prisma.user.create({
+            data: {
+                email: SEED_ADMIN_EMAIL.toLowerCase(), passwordHash: hashedPassword,
+                firstName: SEED_ADMIN_FIRSTNAME, lastName: SEED_ADMIN_LASTNAME,
+                isActive: true, tenantId: tenant.id,
+                roles: { create: [{ roleId: adminRole.id }] } // Assign Admin role via join table
+            },
+            include: { roles: { select: { roleId: true } } }
+        });
+        console.log(`✅ Admin user '${adminUser.email}' created for tenant ${tenant.id} and assigned Admin role.`);
     } else {
-         // User exists, ensure Admin role is assigned
-         console.log(`✅ Admin user '${adminUser.email}' already exists for tenant ${tenant.id}. Ensuring Admin role assignment...`);
-         const hasAdminRole = adminUser.roles.some(userRole => userRole.roleId === adminRole.id);
-         if (!hasAdminRole) {
-             console.log(`Admin user found but missing Admin role assignment for this tenant. Assigning...`);
-             await prisma.userRole.create({ data: { userId: adminUser.id, roleId: adminRole.id } });
-             console.log(`✅ Assigned Admin role to existing user '${adminUser.email}' for this tenant.`);
-         } else {
-             console.log(`✅ Existing admin user '${adminUser.email}' already has Admin role for this tenant.`);
-         }
-         // Optionally update other fields like name/activity status
-         await prisma.user.update({
+        // User exists, ensure Admin role is assigned
+        console.log(`✅ Admin user '${adminUser.email}' already exists for tenant ${tenant.id}. Ensuring Admin role assignment...`);
+        const hasAdminRole = adminUser.roles.some(userRole => userRole.roleId === adminRole.id);
+        if (!hasAdminRole) {
+            console.log(`Admin user found but missing Admin role assignment for this tenant. Assigning...`);
+            await prisma.userRole.create({ data: { userId: adminUser.id, roleId: adminRole.id } });
+            console.log(`✅ Assigned Admin role to existing user '${adminUser.email}' for this tenant.`);
+        } else {
+            console.log(`✅ Existing admin user '${adminUser.email}' already has Admin role for this tenant.`);
+        }
+        // Optionally update other fields like name/activity status
+        await prisma.user.update({
             where: { id: adminUser.id },
             data: { isActive: true, firstName: SEED_ADMIN_FIRSTNAME, lastName: SEED_ADMIN_LASTNAME }
-         });
+        });
     }
 
     console.log(`🌱 Seed process finished.`);
@@ -355,15 +364,15 @@ async function main() {
 
 // --- Execute Main Function ---
 main()
-  .catch((e) => {
-    console.error('❌ Error during seeding:', e);
-    if (e instanceof Prisma.PrismaClientKnownRequestError) {
-        console.error(`Prisma Error Code: ${e.code}`);
-        if(e.meta) console.error(`Meta: ${JSON.stringify(e.meta)}`);
-    }
-    process.exit(1);
-  })
-  .finally(async () => {
-    console.log('Disconnecting Prisma Client...');
-    await prisma.$disconnect();
-  });
+    .catch((e) => {
+        console.error('❌ Error during seeding:', e);
+        if (e instanceof Prisma.PrismaClientKnownRequestError) {
+            console.error(`Prisma Error Code: ${e.code}`);
+            if (e.meta) console.error(`Meta: ${JSON.stringify(e.meta)}`);
+        }
+        process.exit(1);
+    })
+    .finally(async () => {
+        console.log('Disconnecting Prisma Client...');
+        await prisma.$disconnect();
+    });

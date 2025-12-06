@@ -115,7 +115,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
         req.tenantId = payload.tenantId; // Attach tenantId from validated token
 
-        console.error(`[AuthMiddleware] User ${req.user.id} authenticated for tenant ${req.tenantId}. Locations: ${JSON.stringify(allowedLocationIds)}`);
+
         next();
 
     } catch (error: any) {

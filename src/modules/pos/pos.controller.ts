@@ -54,8 +54,9 @@ const endSession = catchAsync(async (req: Request, res: Response) => {
 const reconcileSession = catchAsync(async (req: Request, res: Response) => {
     const tenantId = getTenantIdFromRequest(req);
     const { sessionId } = req.params;
+    const { notes } = req.body;
     // Permission check needed: Only managers/admins?
-    const session = await posService.reconcileSession(sessionId, tenantId);
+    const session = await posService.reconcileSession(sessionId, tenantId, notes);
     res.status(httpStatus.OK).send(session);
 });
 
@@ -127,6 +128,21 @@ const processCheckout = catchAsync(async (req: Request, res: Response) => {
 });
 
 
+// --- Suspend/Resume Controller ---
+
+const suspendOrder = catchAsync(async (req: Request, res: Response) => {
+    const { tenantId, userId, locationId, posTerminalId } = getPosContext(req);
+    const { sessionId } = req.params;
+    const order = await posService.suspendOrder(req.body, sessionId, tenantId, userId, posTerminalId, locationId);
+    res.status(httpStatus.CREATED).send(order);
+});
+
+const getSuspendedOrders = catchAsync(async (req: Request, res: Response) => {
+    const { tenantId, locationId } = getPosContext(req); // Assuming terminal ID not strictly required for listing, just location
+    const orders = await posService.getSuspendedOrders(tenantId, locationId);
+    res.status(httpStatus.OK).send(orders);
+});
+
 export const posController = {
     // Sessions
     startSession,
@@ -138,6 +154,9 @@ export const posController = {
     getSessions,
     // Checkout
     processCheckout,
+    // Suspend
+    suspendOrder,
+    getSuspendedOrders,
     // Offline Sync (Placeholder)
     // processOfflineSync: catchAsync(async (req, res) => { /* ... */ }),
 };

@@ -7,6 +7,7 @@ import { StartSessionDto } from './dto/start-session.dto';
 import { EndSessionDto } from './dto/end-session.dto';
 import { CashTransactionDto } from './dto/cash-transaction.dto';
 import { PosCheckoutDto } from './dto/pos-checkout.dto';
+import { PosSuspendDto } from './dto/pos-suspend.dto';
 import { authMiddleware } from '@/middleware/auth.middleware';
 import { ensureTenantContext } from '@/middleware/tenant.middleware';
 import { checkPermissions } from '@/middleware/rbac.middleware';
@@ -33,46 +34,46 @@ router.post(
 // Get current session for the user/terminal sending request (via headers)
 router.get(
     '/sessions/current',
-     checkPermissions(['pos:session:read']), // Permission to view own session
-     posController.getCurrentSession
+    checkPermissions(['pos:session:read']), // Permission to view own session
+    posController.getCurrentSession
 );
 
 // End a specific session
 router.post(
     '/sessions/:sessionId/end',
-     checkPermissions(['pos:session:end']), // Permission to end own session
-     authRateLimiter,
-     validateRequest(EndSessionDto),
-     posController.endSession
+    checkPermissions(['pos:session:end']), // Permission to end own session
+    authRateLimiter,
+    validateRequest(EndSessionDto),
+    posController.endSession
 );
 
 // Reconcile a specific session
 router.post(
     '/sessions/:sessionId/reconcile',
-     checkPermissions(['pos:session:reconcile']), // Permission for managers/admins
-     posController.reconcileSession
+    checkPermissions(['pos:session:reconcile']), // Permission for managers/admins
+    posController.reconcileSession
 );
 
 // Record Pay In/Out
 router.post(
     '/sessions/:sessionId/cash',
-     checkPermissions(['pos:session:cash']), // Permission for cash movements
-     validateRequest(CashTransactionDto),
-     posController.recordCashTransaction
+    checkPermissions(['pos:session:cash']), // Permission for cash movements
+    validateRequest(CashTransactionDto),
+    posController.recordCashTransaction
 );
 
 // Get list of sessions (Admin/Manager view)
 router.get(
     '/sessions',
-     checkPermissions(['pos:session:list']), // Permission to view all sessions
-     posController.getSessions
+    checkPermissions(['pos:session:list']), // Permission to view all sessions
+    posController.getSessions
 );
 
 // Get details of a specific session
 router.get(
     '/sessions/:sessionId',
-     checkPermissions(['pos:session:read']), // Permission to view specific session details
-     posController.getSession
+    checkPermissions(['pos:session:read']), // Permission to view specific session details
+    posController.getSession
 );
 
 
@@ -87,13 +88,19 @@ router.post(
     posController.processCheckout
 );
 
-// --- Offline Sync Route (Placeholder) ---
-// router.post(
-//     '/sync',
-//     checkPermissions(['pos:sync']),
-//     // validateRequest(OfflineSyncDto), // DTO for offline batch
-//     posController.processOfflineSync
-// );
+// Suspend an order
+router.post(
+    '/sessions/:sessionId/suspend',
+    checkPermissions(['pos:checkout']), // Same permission as checkout
+    validateRequest(PosSuspendDto),
+    posController.suspendOrder
+);
 
+// Get suspended orders for the current location
+router.get(
+    '/sales/suspended',
+    checkPermissions(['pos:checkout']), // Permission to retrieve suspended orders
+    posController.getSuspendedOrders
+);
 
 export default router;
