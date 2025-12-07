@@ -68,4 +68,7 @@ export class ReportQueryDto {
 
     @IsString() @IsOptional()
     quantityGte?: string;
+
+    @IsString() @IsOptional()
+    search?: string; // Search by product name or SKU
 }

@@ -214,6 +214,7 @@ model Tenant {
   auditLogs             AuditLog[]
   returns               Return[]
   stockCounts           StockCount[] 
+  posAuditLogs          PosAuditLog[] 
 
   @@index([status])
   @@map("tenants")
@@ -301,6 +302,7 @@ model User {
   completedStockCounts   StockCount[]          @relation("CompletedStockCounts")
   countedStockCountItems StockCountItem[]      @relation("CountedStockCountItems")
   locations              UserLocation[]        // Locations assigned to this user
+  posAuditLogs           PosAuditLog[]         @relation("PosAuditLogs")
 
   @@index([tenantId]) // Index nullable FK
   @@index([email])
@@ -523,6 +525,7 @@ model Location {
   returns              Return[]               // Location where return was processed
   stockCounts          StockCount[]
   users                UserLocation[]         // Users assigned to this location
+  posAuditLogs         PosAuditLog[]
 
   @@unique([tenantId, name]) // Location name unique per tenant
   @@index([tenantId])
@@ -1203,4 +1206,49 @@ model StockCountItem {
   @@index([productId])
   @@index([status])
   @@map("stock_count_items")
+}
+
+// ======================================================================
+// == POS Audit Log (Fix #12: Track suspend/recall/delete actions) ==
+// ======================================================================
+
+enum PosAuditAction {
+  ORDER_SUSPENDED   // Order was suspended/held
+  ORDER_RECALLED    // Suspended order was recalled (deleted from hold)
+  ORDER_DELETED     // Suspended order was permanently deleted (without recall)
+}
+
+model PosAuditLog {
+  id            String          @id @default(uuid())
+  tenantId      String          @map("tenant_id")
+  locationId    String          @map("location_id")
+  userId        String          @map("user_id")
+  sessionId     String?         @map("session_id")
+  
+  action        PosAuditAction
+  orderId       String?         @map("order_id")
+  orderNumber   String?         @map("order_number")
+  orderTag      String?         @map("order_tag")     // The tag used for the order
+  totalAmount   Decimal?        @map("total_amount") @db.Decimal(19, 4)
+  itemCount     Int?            @map("item_count")
+  customerId    String?         @map("customer_id")
+  
+  metadata      Json?           // Additional context (e.g., items, reason)
+  ipAddress     String?         @map("ip_address")
+  userAgent     String?         @map("user_agent")
+  
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location      Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  user          User            @relation("PosAuditLogs", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([locationId])
+  @@index([orderId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("pos_audit_logs")
 }

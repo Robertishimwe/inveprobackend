@@ -1,11 +1,12 @@
 import httpStatus from 'http-status';
 import {
     Prisma, PosSession, PosSessionStatus, PosTransactionType, OrderType, PaymentMethod, PaymentStatus, // Added PaymentStatus
-    OrderStatus, InventoryTransactionType, PosSessionTransaction // Added Payment, PosSessionTransaction
+    OrderStatus, InventoryTransactionType, PosSessionTransaction, PosAuditAction // Added PosAuditAction for audit logging
 } from '@prisma/client';
 import { prisma } from '@/config';
 import ApiError from '@/utils/ApiError';
 import logger from '@/utils/logger';
+import { sseManager } from '@/utils/sseManager';
 
 import { StartSessionDto } from './dto/start-session.dto';
 import { EndSessionDto } from './dto/end-session.dto';
@@ -16,6 +17,7 @@ import { PosCheckoutDto } from './dto/pos-checkout.dto';
 import { OrderWithDetails } from '@/modules/orders/order.service';
 import { purchaseOrderService } from '../purchase-order/purchase-order.service';
 import { orderService } from '@/modules/orders/order.service';
+import { productService } from '@/modules/products/product.service';
 // import { inventoryService } from '@/modules/inventory/inventory.service';
 
 
@@ -1115,6 +1117,24 @@ const processPosCheckout = async (
         logContext.durationMs = checkoutEndTime - startTime;
         logContext.txDurationMs = checkoutEndTime - transactionStartTime;
         logger.info(`POS Checkout successful`, logContext);
+
+        // SSE: Broadcast stock update to all POS terminals (stock was deducted)
+        for (const item of checkoutData.items) {
+            const inventoryItem = await prisma.inventoryItem.findFirst({
+                where: { tenantId, productId: item.productId, locationId },
+                select: { quantityOnHand: true, quantityAllocated: true }
+            });
+            if (inventoryItem) {
+                sseManager.broadcastStockUpdate(
+                    tenantId, locationId, item.productId,
+                    Number(inventoryItem.quantityOnHand),
+                    Number(inventoryItem.quantityAllocated)
+                );
+            }
+            // CRITICAL: Invalidate Redis product cache so API returns fresh data
+            await productService.invalidateProductCache(tenantId, item.productId);
+        }
+
         return createdOrder as OrderWithDetails; // Cast transaction result
 
     } catch (error: any) {
@@ -1216,10 +1236,8 @@ const querySessions = async (filter: Prisma.PosSessionWhereInput, orderBy: Prism
 /** Suspend an incomplete order */
 import { PosSuspendDto } from './dto/pos-suspend.dto';
 
-// ... (other imports)
-
 const suspendOrder = async (
-    checkoutData: PosCheckoutDto | PosSuspendDto,
+    suspendData: PosSuspendDto,
     sessionId: string,
     tenantId: string,
     userId: string,
@@ -1234,58 +1252,136 @@ const suspendOrder = async (
         throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or inactive POS session.');
     }
 
+    // Fetch products to get name/sku for snapshot
+    const productIds = suspendData.items.map(item => item.productId);
+    const products = await prisma.product.findMany({
+        where: { id: { in: productIds }, tenantId },
+        select: { id: true, name: true, sku: true, basePrice: true }
+    });
+    const productMap = new Map(products.map(p => [p.id, p]));
+
     const createdOrder = await prisma.$transaction(async (tx) => {
         // Create Order Header
-        const orderNumber = await orderService.generateOrderNumber(tenantId);
+        // Fix #3: Use provided orderNumber for re-suspend, or generate new one
+        const orderNumber = suspendData.orderNumber || await orderService.generateOrderNumber(tenantId);
 
         let subtotal = new Prisma.Decimal(0);
         // Calculate subtotal from items
-        checkoutData.items.forEach(item => {
+        suspendData.items.forEach(item => {
             const qty = new Prisma.Decimal(item.quantity);
             const price = item.unitPrice ? new Prisma.Decimal(item.unitPrice) : new Prisma.Decimal(0);
             subtotal = subtotal.plus(qty.times(price));
         });
 
-        const discount = new Prisma.Decimal(checkoutData.discountAmount ?? 0);
+        const discount = new Prisma.Decimal(suspendData.discountAmount ?? 0);
         const total = subtotal.minus(discount);
+
+        // Build notes with tag prefix if provided
+        const orderNotes = suspendData.tag
+            ? `[TAG:${suspendData.tag}]${suspendData.notes ? ' ' + suspendData.notes : ''}`
+            : suspendData.notes || null;
 
         const order = await tx.order.create({
             data: {
-                tenantId, orderNumber, customerId: checkoutData.customerId, locationId, posTerminalId, userId,
+                tenantId, orderNumber, customerId: suspendData.customerId, locationId, posTerminalId, userId,
                 orderType: OrderType.POS,
                 status: OrderStatus.SUSPENDED,
                 orderDate: new Date(),
                 subtotal: subtotal,
                 discountAmount: discount,
-                taxAmount: new Prisma.Decimal(0), // Placeholder
+                taxAmount: new Prisma.Decimal(0),
                 totalAmount: total,
                 currencyCode: 'USD',
-                notes: checkoutData.notes,
+                notes: orderNotes,
                 isBackordered: false,
                 items: {
-                    create: checkoutData.items.map(item => ({
-                        tenantId, // Add tenantId here
-                        productSnapshot: {},
-                        quantity: new Prisma.Decimal(item.quantity),
-                        unitPrice: new Prisma.Decimal(item.unitPrice ?? 0),
-                        originalUnitPrice: new Prisma.Decimal(item.unitPrice ?? 0),
-                        lineTotal: new Prisma.Decimal(Number(item.quantity) * (Number(item.unitPrice) ?? 0)),
-                        product: { connect: { id: item.productId } }
-                    }))
+                    create: suspendData.items.map(item => {
+                        const product = productMap.get(item.productId);
+                        return {
+                            tenantId,
+                            productSnapshot: {
+                                name: product?.name || 'Unknown',
+                                sku: product?.sku || '',
+                                price: item.unitPrice ?? product?.basePrice?.toNumber() ?? 0
+                            },
+                            quantity: new Prisma.Decimal(item.quantity),
+                            unitPrice: new Prisma.Decimal(item.unitPrice ?? 0),
+                            originalUnitPrice: new Prisma.Decimal(item.unitPrice ?? 0),
+                            lineTotal: new Prisma.Decimal(Number(item.quantity) * (Number(item.unitPrice) ?? 0)),
+                            product: { connect: { id: item.productId } }
+                        };
+                    })
                 }
             },
             include: {
-                items: { include: { product: true } },
-                customer: true,
+                items: { include: { product: { select: { id: true, sku: true, name: true, basePrice: true } } } },
+                customer: { select: { id: true, firstName: true, lastName: true, email: true } },
+                location: { select: { id: true, name: true } },
+                user: { select: { id: true, firstName: true, lastName: true } },
                 payments: true
             }
         });
 
+        // Fix #2: Reserve stock by incrementing quantityAllocated for each item
+        for (const item of suspendData.items) {
+            await tx.inventoryItem.updateMany({
+                where: {
+                    tenantId,
+                    productId: item.productId,
+                    locationId,
+                },
+                data: {
+                    quantityAllocated: {
+                        increment: new Prisma.Decimal(item.quantity)
+                    }
+                }
+            });
+        }
+
         return order;
     });
 
-    logger.info(`Order suspended successfully`, logContext);
-    // @ts-ignore
+    // Fix #12: Create audit log for order suspension
+    await prisma.posAuditLog.create({
+        data: {
+            tenantId,
+            locationId,
+            userId,
+            sessionId: currentSession.id,
+            action: PosAuditAction.ORDER_SUSPENDED,
+            orderId: createdOrder.id,
+            orderNumber: createdOrder.orderNumber,
+            orderTag: suspendData.tag || (suspendData.notes?.match(/\[TAG:([^\]]+)\]/)?.[1]),
+            totalAmount: createdOrder.totalAmount,
+            itemCount: suspendData.items.length,
+            customerId: suspendData.customerId,
+        }
+    }).catch(err => logger.warn('Failed to create audit log for suspend', { error: err })); // Non-blocking
+
+    // SSE: Broadcast stock update to all POS terminals at this location
+    for (const item of suspendData.items) {
+        const inventoryItem = await prisma.inventoryItem.findFirst({
+            where: { tenantId, productId: item.productId, locationId },
+            select: { quantityOnHand: true, quantityAllocated: true }
+        });
+        if (inventoryItem) {
+            sseManager.broadcastStockUpdate(
+                tenantId, locationId, item.productId,
+                Number(inventoryItem.quantityOnHand),
+                Number(inventoryItem.quantityAllocated)
+            );
+        }
+        // CRITICAL: Invalidate Redis product cache so API returns fresh data
+        await productService.invalidateProductCache(tenantId, item.productId);
+    }
+
+    // SSE: Broadcast suspended order count update
+    const suspendedCount = await prisma.order.count({
+        where: { tenantId, locationId, status: OrderStatus.SUSPENDED }
+    });
+    sseManager.broadcastSuspendedCountUpdate(tenantId, locationId, suspendedCount);
+
+    logger.info(`Order suspended successfully`, { ...logContext, orderId: createdOrder.id, tag: suspendData.tag });
     return createdOrder as unknown as OrderWithDetails;
 };
 
@@ -1310,6 +1406,104 @@ const getSuspendedOrders = async (tenantId: string, locationId: string): Promise
     }) as unknown as OrderWithDetails[];
 };
 
+/** Resume/delete a suspended order after recall */
+const resumeOrder = async (
+    orderId: string,
+    tenantId: string,
+    locationId: string,
+    userId: string,
+    posTerminalId: string
+): Promise<void> => {
+    const logContext: LogContext = { function: 'resumeOrder', tenantId, orderId, locationId, userId };
+
+    // Fix #10: Validate session like suspendOrder does
+    const currentSession = await getCurrentSession(userId, posTerminalId, locationId, tenantId);
+    if (!currentSession) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'No active POS session. Start a session to recall orders.');
+    }
+
+    // Fix #5: Use transaction with row lock to prevent concurrent recalls
+    const order = await prisma.$transaction(async (tx) => {
+        // Lock the row for update - prevents another transaction from deleting while we're working
+        const orders = await tx.$queryRaw<{ id: string; orderNumber: string; notes: string | null; totalAmount: any; customerId: string | null }[]>`
+            SELECT id, order_number as "orderNumber", notes, total_amount as "totalAmount", customer_id as "customerId"
+            FROM orders 
+            WHERE id = ${orderId} 
+              AND tenant_id = ${tenantId} 
+              AND location_id = ${locationId} 
+              AND status = 'SUSPENDED'
+            FOR UPDATE NOWAIT
+        `;
+
+        if (!orders || orders.length === 0) {
+            throw new ApiError(httpStatus.NOT_FOUND, 'Suspended order not found or already recalled.');
+        }
+
+        const order = orders[0];
+
+        // Fix #2: Release stock allocation by fetching order items and decrementing quantityAllocated
+        const orderItems = await tx.orderItem.findMany({
+            where: { orderId: orderId },
+            select: { productId: true, quantity: true }
+        });
+
+        for (const item of orderItems) {
+            await tx.inventoryItem.updateMany({
+                where: {
+                    tenantId,
+                    productId: item.productId,
+                    locationId,
+                },
+                data: {
+                    quantityAllocated: {
+                        decrement: item.quantity
+                    }
+                }
+            });
+        }
+
+        // Delete the suspended order (items will cascade delete)
+        await tx.order.delete({ where: { id: orderId } });
+
+        return order;
+    }).catch((err: any) => {
+        // Handle lock acquisition failure (another user is recalling)
+        if (err.code === 'P2034' || err.message?.includes('NOWAIT')) {
+            throw new ApiError(httpStatus.CONFLICT, 'Order is being recalled by another user. Please try again.');
+        }
+        throw err;
+    });
+
+    // Fix #12: Create audit log for order recall
+    await prisma.posAuditLog.create({
+        data: {
+            tenantId,
+            locationId,
+            userId,
+            sessionId: currentSession.id,
+            action: PosAuditAction.ORDER_RECALLED,
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            orderTag: order.notes?.match(/\[TAG:([^\]]+)\]/)?.[1],
+            totalAmount: order.totalAmount,
+            customerId: order.customerId,
+        }
+    }).catch(err => logger.warn('Failed to create audit log for recall', { error: err })); // Non-blocking
+
+    // SSE: Broadcast suspended order count update (items were fetched before delete, so we need to re-query)
+    const suspendedCount = await prisma.order.count({
+        where: { tenantId, locationId, status: OrderStatus.SUSPENDED }
+    });
+    sseManager.broadcastSuspendedCountUpdate(tenantId, locationId, suspendedCount);
+
+    // SSE: Broadcast stock update - stock allocation was released
+    // Note: We fetched order items before delete within the transaction
+    // We can approximate by broadcasting a general refresh signal
+    sseManager.broadcastStockUpdate(tenantId, locationId, 'ALL', 0, 0); // Signal to refresh all products
+
+    logger.info(`Suspended order deleted/resumed`, logContext);
+};
+
 export const posService = {
     // Session Management
     getCurrentSession,
@@ -1323,5 +1517,6 @@ export const posService = {
     processPosCheckout,
     // Suspend
     suspendOrder,
-    getSuspendedOrders
+    getSuspendedOrders,
+    resumeOrder
 };

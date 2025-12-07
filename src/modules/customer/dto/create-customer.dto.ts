@@ -1,9 +1,10 @@
-import { IsString, MaxLength, IsOptional, IsEmail, IsObject, ValidateNested, IsJSON, IsUUID, IsBoolean, IsInt, Min } from 'class-validator';
+import { IsString, MaxLength, IsOptional, IsEmail, IsObject, ValidateNested, IsJSON, IsUUID, IsBoolean, IsInt, Min, ValidateIf } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AddressDto } from './address.dto';
 
 export class CreateCustomerDto {
-    @IsEmail({}, { message: 'Please provide a valid email address.'})
+    @ValidateIf(o => o.email !== undefined && o.email !== null && o.email !== '')
+    @IsEmail({}, { message: 'Please provide a valid email address.' })
     @MaxLength(255)
     @IsOptional() // Email might be optional depending on business requirements
     email?: string;

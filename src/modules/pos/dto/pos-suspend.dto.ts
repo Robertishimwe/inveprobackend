@@ -1,5 +1,5 @@
 
-import { IsUUID, IsOptional, IsArray, ArrayNotEmpty, ValidateNested, IsObject, IsNumber, Min, IsString } from 'class-validator';
+import { IsUUID, IsOptional, IsArray, ArrayNotEmpty, ValidateNested, IsObject, IsNumber, Min, IsString, MaxLength, Allow } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateOrderItemDto } from '@/modules/orders/dto/order-item.dto';
 import { AddressDto } from '@/modules/customer/dto/address.dto';
@@ -21,5 +21,21 @@ export class PosSuspendDto {
     @IsObject() @ValidateNested() @Type(() => AddressDto) @IsOptional()
     shippingAddress?: AddressDto | null;
 
-    @IsString() @IsOptional() notes?: string;
+    @IsOptional()
+    @IsString()
+    notes?: string;
+
+    @Allow() // Explicitly whitelist this property
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    tag?: string; // Identifier for the suspended order (e.g., "Table 5", "Red shirt guy")
+
+    @Allow() // Fix #3: Reuse order number on re-suspend
+    @IsOptional()
+    @IsString()
+    @MaxLength(20)
+    orderNumber?: string;
 }
+
+

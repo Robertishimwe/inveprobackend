@@ -5,6 +5,7 @@ import validateRequest from '@/middleware/validate.middleware';
 import { CreateAdjustmentDto } from './dto/create-adjustment.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 import { ReceiveTransferDto } from './dto/receive-transfer.dto';
+import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
 import { authMiddleware } from '@/middleware/auth.middleware';
 import { ensureTenantContext } from '@/middleware/tenant.middleware';
 import { checkPermissions } from '@/middleware/rbac.middleware';
@@ -87,7 +88,14 @@ router.route('/items/:itemId')
     .get(
         checkPermissions(['inventory:read']),
         inventoryController.getInventoryItem
+    )
+    /** PATCH /api/v1/inventory/items/:itemId - Update reorder settings */
+    .patch(
+        checkPermissions(['inventory:update']),
+        validateRequest(UpdateInventoryItemDto),
+        inventoryController.updateInventoryItem
     );
 
 
 export default router;
+

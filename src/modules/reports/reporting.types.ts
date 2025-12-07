@@ -129,13 +129,14 @@ export interface InventoryOnHandItem {
     productId: string;
     sku: string;
     productName: string;
+    unitOfMeasure: string;          // e.g., "each", "kg", "liter"
     locationId: string;
     locationName: string;
-    quantityOnHand: string;     // Current QOH as string
-    quantityAllocated: string;  // Current Allocated Qty as string
-    quantityAvailable: string;  // Calculated: onHand - allocated, as string
-    unitCost?: string | null;   // e.g., average cost from InventoryItem
-    totalValue?: string | null; // Calculated: onHand * unitCost, as string
+    quantityOnHand: number;         // Current QOH as number
+    quantityAllocated: number;      // Current Allocated Qty as number
+    quantityAvailable: number;      // Calculated: onHand - allocated, as number
+    unitCost?: number | null;       // e.g., average cost from InventoryItem
+    totalValue?: number | null;     // Calculated: onHand * unitCost, as number
     // Optionally add: quantityIncoming, reorderPoint etc. from InventoryItem
 }
 
@@ -148,13 +149,14 @@ export interface LowStockItem {
     productId: string;
     sku: string;
     productName: string;
+    unitOfMeasure: string;
     locationId: string;
     locationName: string;
-    quantityOnHand: string;
-    quantityAvailable: string;
-    reorderPoint: string | null;
-    quantityBelowReorder: string | null; // Calculated: reorderPoint - quantityOnHand (if positive)
-    quantityIncoming?: string | null; // Useful context
+    quantityOnHand: number;
+    quantityAvailable: number;
+    reorderPoint: number;
+    quantityBelowReorder: number;
+    quantityIncoming?: number | null;
 }
 
 // Represents a single line in the inventory movement ledger
@@ -231,7 +233,7 @@ export interface PurchaseOrderSummaryItem {
 
 export interface PurchaseOrderDetailReportItem extends PurchaseOrderSummaryItem {
     // Include details from PurchaseOrderWithDetails if needed for a detail report
-    items: (PurchaseOrderItem & { product: Pick<Product, 'id'|'sku'|'name'> })[];
+    items: (PurchaseOrderItem & { product: Pick<Product, 'id' | 'sku' | 'name'> })[];
     notes?: string | null;
     shippingCost: string;
     taxAmount: string;

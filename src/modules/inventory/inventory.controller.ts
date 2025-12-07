@@ -264,6 +264,14 @@ const getInventoryItem = catchAsync(async (req: Request, res: Response) => {
     res.status(httpStatus.OK).send(item);
 });
 
+const updateInventoryItem = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req);
+    const { itemId } = req.params;
+    // req.body is validated UpdateInventoryItemDto by middleware
+    const updated = await inventoryService.updateInventoryItem(itemId, req.body, tenantId);
+    res.status(httpStatus.OK).send(updated);
+});
+
 
 // Export all controller methods
 export const inventoryController = {
@@ -280,4 +288,5 @@ export const inventoryController = {
     // Stock Levels
     getInventoryItems,
     getInventoryItem,
+    updateInventoryItem,
 };

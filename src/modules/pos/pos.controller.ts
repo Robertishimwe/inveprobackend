@@ -143,6 +143,14 @@ const getSuspendedOrders = catchAsync(async (req: Request, res: Response) => {
     res.status(httpStatus.OK).send(orders);
 });
 
+const resumeOrder = catchAsync(async (req: Request, res: Response) => {
+    const { tenantId, locationId, userId, posTerminalId } = getPosContext(req);
+    const { orderId } = req.params;
+    // Fix #10: Pass session info for validation
+    await posService.resumeOrder(orderId, tenantId, locationId, userId, posTerminalId);
+    res.status(httpStatus.NO_CONTENT).send();
+});
+
 export const posController = {
     // Sessions
     startSession,
@@ -157,6 +165,7 @@ export const posController = {
     // Suspend
     suspendOrder,
     getSuspendedOrders,
+    resumeOrder,
     // Offline Sync (Placeholder)
     // processOfflineSync: catchAsync(async (req, res) => { /* ... */ }),
 };

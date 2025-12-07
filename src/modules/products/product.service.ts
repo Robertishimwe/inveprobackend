@@ -515,4 +515,5 @@ export const productService = {
     getProductById,
     updateProductById,
     deleteProductById,
+    invalidateProductCache, // Exported for POS/inventory to bust cache after stock changes
 };

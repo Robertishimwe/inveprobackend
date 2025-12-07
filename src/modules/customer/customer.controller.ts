@@ -33,7 +33,8 @@ const getCustomers = catchAsync(async (req: Request, res: Response) => {
         'phone',        // Filter by phone number (contains)
         'companyName',  // Filter by company name (contains)
         'customerGroupId',// Filter by specific customer group ID
-        'taxExempt'     // Filter by tax-exempt status ('true' or 'false')
+        'taxExempt',    // Filter by tax-exempt status ('true' or 'false')
+        'search',       // Unified search across all text fields
         // Add isActive filter if you add that field to the Customer model
     ]);
     // Define allowed options for sorting and pagination
@@ -42,27 +43,38 @@ const getCustomers = catchAsync(async (req: Request, res: Response) => {
     // Build Prisma WhereInput object, always including the tenantId
     const filter: Prisma.CustomerWhereInput = { tenantId }; // Automatically scope by tenant
 
-    if (filterParams.firstName) filter.firstName = { contains: filterParams.firstName as string, mode: 'insensitive' };
-    if (filterParams.lastName) filter.lastName = { contains: filterParams.lastName as string, mode: 'insensitive' };
-    if (filterParams.email) filter.email = { contains: filterParams.email as string, mode: 'insensitive' };
-    if (filterParams.phone) filter.phone = { contains: filterParams.phone as string };
-    if (filterParams.companyName) filter.companyName = { contains: filterParams.companyName as string, mode: 'insensitive' };
+    // Unified search - searches across multiple fields
+    if (filterParams.search) {
+        const searchTerm = filterParams.search as string;
+        filter.OR = [
+            { firstName: { contains: searchTerm, mode: 'insensitive' } },
+            { lastName: { contains: searchTerm, mode: 'insensitive' } },
+            { email: { contains: searchTerm, mode: 'insensitive' } },
+            { phone: { contains: searchTerm } },
+            { companyName: { contains: searchTerm, mode: 'insensitive' } },
+            // Search in customAttributes JSON field (PostgreSQL)
+            { customAttributes: { path: [], string_contains: searchTerm } },
+        ];
+    } else {
+        // Individual field filters (only apply if unified search is not used)
+        if (filterParams.firstName) filter.firstName = { contains: filterParams.firstName as string, mode: 'insensitive' };
+        if (filterParams.lastName) filter.lastName = { contains: filterParams.lastName as string, mode: 'insensitive' };
+        if (filterParams.email) filter.email = { contains: filterParams.email as string, mode: 'insensitive' };
+        if (filterParams.phone) filter.phone = { contains: filterParams.phone as string };
+        if (filterParams.companyName) filter.companyName = { contains: filterParams.companyName as string, mode: 'insensitive' };
+
+        // Combined name search (example - searching first OR last name)
+        if (filterParams.name) {
+            const name = filterParams.name as string;
+            filter.OR = [
+                { firstName: { contains: name, mode: 'insensitive' } },
+                { lastName: { contains: name, mode: 'insensitive' } },
+            ];
+        }
+    }
+
     if (filterParams.customerGroupId) filter.customerGroupId = filterParams.customerGroupId as string;
     if (filterParams.taxExempt !== undefined) filter.taxExempt = filterParams.taxExempt === 'true';
-
-    // Combined name search (example - searching first OR last name)
-    if (filterParams.name) {
-        const name = filterParams.name as string;
-        filter.OR = [
-            { firstName: { contains: name, mode: 'insensitive' } },
-            { lastName: { contains: name, mode: 'insensitive' } },
-            // Could add companyName here too if desired
-            // { companyName: { contains: name, mode: 'insensitive' } },
-        ];
-        // Remove individual firstName/lastName filters if combined name search is used? Optional.
-        // delete filter.firstName;
-        // delete filter.lastName;
-    }
 
     // Build Prisma OrderBy array
     const orderBy: Prisma.CustomerOrderByWithRelationInput[] = [];

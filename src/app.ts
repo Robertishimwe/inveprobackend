@@ -30,6 +30,7 @@ import purchaseOrderRoutes from '@/modules/purchase-order/purchase-order.routes'
 import returnRoutes from '@/modules/returns/return.routes'; // Example of another module
 import stockCountRoutes from '@/modules/stock-counts/stock-count.routes';
 import reportRoutes from '@/modules/reports/reports.routes';
+import sseRoutes from '@/routes/sse.routes';
 // Add imports for any other modules (e.g., reporting)
 
 const app: Express = express();
@@ -102,6 +103,7 @@ apiRouter.use('/tenants', tenantsRoutes); // Assuming you have a tenants module
 apiRouter.use('/returns', returnRoutes); // Example of another module
 apiRouter.use('/stock-counts', stockCountRoutes);
 apiRouter.use('/reports', reportRoutes);
+apiRouter.use('/sse', sseRoutes); // Real-time SSE for stock updates
 
 app.use('/api/v1', apiRouter);
 

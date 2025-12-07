@@ -82,6 +82,7 @@ const CORE_PERMISSIONS = [
     { permissionKey: 'inventory:valuation:read', description: 'View inventory valuation reports' },
     { permissionKey: 'inventory:manage:serials', description: 'Manage serial numbers' },
     { permissionKey: 'inventory:manage:lots', description: 'Manage lot numbers and expiry dates' },
+    { permissionKey: 'inventory:update', description: 'Update inventory item settings like reorder point' },
     // Supplier & Purchasing
     { permissionKey: 'supplier:create', description: 'Create new suppliers' },
     { permissionKey: 'supplier:read', description: 'View supplier details' },

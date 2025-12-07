@@ -103,4 +103,11 @@ router.get(
     posController.getSuspendedOrders
 );
 
+// Resume (delete) a suspended order after recall
+router.delete(
+    '/sales/suspended/:orderId',
+    checkPermissions(['pos:checkout']), // Same permission as checkout
+    posController.resumeOrder
+);
+
 export default router;

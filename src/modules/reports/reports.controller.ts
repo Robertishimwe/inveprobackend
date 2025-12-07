@@ -28,6 +28,7 @@ export class ReportQueryDto {
      returnNumber?: string;
      quantityLte?: string;
      quantityGte?: string;
+     search?: string;
 }
 
 // Helper function to parse and validate common report query parameters
@@ -36,7 +37,7 @@ const parseAndValidateReportQuery = (req: Request): ReportQueryDto => {
           'startDate', 'endDate', 'locationId', 'productId', 'categoryId',
           'customerId', 'userId', 'page', 'limit', 'sortBy', 'period',
           'supplierId', 'status', 'poNumber', 'orderNumber', 'returnNumber',
-          'quantityLte', 'quantityGte'
+          'quantityLte', 'quantityGte', 'search'
      ]);
 
      const pageParam = query.page ? parseInt(query.page as string, 10) : 1;
@@ -59,6 +60,7 @@ const parseAndValidateReportQuery = (req: Request): ReportQueryDto => {
           returnNumber: query.returnNumber as string | undefined,
           quantityLte: query.quantityLte as string | undefined,
           quantityGte: query.quantityGte as string | undefined,
+          search: query.search as string | undefined,
           page: !isNaN(pageParam) && pageParam >= 1 ? pageParam : 1,
           limit: !isNaN(limitParam) && limitParam >= 1 && limitParam <= 1000 ? limitParam : 50,
      };
@@ -136,6 +138,9 @@ const getInventoryOnHand = catchAsync(async (req: Request, res: Response) => {
           locationId: queryParams.locationId,
           productId: queryParams.productId,
           categoryId: queryParams.categoryId,
+          search: queryParams.search,
+          page: queryParams.page,
+          limit: queryParams.limit,
      });
      res.status(httpStatus.OK).send(inventoryData);
 });

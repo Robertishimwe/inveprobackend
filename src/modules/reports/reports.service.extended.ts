@@ -223,12 +223,35 @@ export const getSalesByProduct = async (tenantId: string, params: Pick<ReportQue
     }
 };
 
-export const getInventoryValuation = async (tenantId: string, params: Pick<ReportQueryDto, 'locationId'>): Promise<InventoryValuationItem[]> => {
+export const getInventoryValuation = async (tenantId: string, params: Pick<ReportQueryDto, 'locationId' | 'search' | 'page' | 'limit'>): Promise<{
+    results: InventoryValuationItem[];
+    totalResults: number;
+    page: number;
+    limit: number;
+}> => {
     const logContext: LogContext = { function: 'getInventoryValuation', tenantId, params };
+
+    const page = params.page ?? 1;
+    const limit = params.limit ?? 50;
+    const skip = (page - 1) * limit;
 
     try {
         const whereFilter: Prisma.InventoryItemWhereInput = { tenantId };
         if (params.locationId) whereFilter.locationId = params.locationId;
+
+        // Add search filter (product name or SKU)
+        if (params.search) {
+            const searchTerm = params.search.trim();
+            whereFilter.product = {
+                OR: [
+                    { name: { contains: searchTerm, mode: 'insensitive' } },
+                    { sku: { contains: searchTerm, mode: 'insensitive' } }
+                ]
+            };
+        }
+
+        // Get total count for pagination
+        const totalResults = await prisma.inventoryItem.count({ where: whereFilter });
 
         const items = await prisma.inventoryItem.findMany({
             where: whereFilter,
@@ -238,36 +261,45 @@ export const getInventoryValuation = async (tenantId: string, params: Pick<Repor
                 quantityOnHand: true,
                 quantityAllocated: true,
                 averageCost: true,
-                product: { select: { sku: true, name: true } },
+                product: { select: { sku: true, name: true, unitOfMeasure: true, costPrice: true } },
                 location: { select: { name: true } },
             },
             orderBy: [{ location: { name: 'asc' } }, { product: { name: 'asc' } }],
+            skip,
+            take: limit
         });
 
         const reportItems: InventoryValuationItem[] = items.map((item) => {
             const quantityOnHand = item.quantityOnHand;
             const quantityAllocated = item.quantityAllocated;
             const quantityAvailable = quantityOnHand.minus(quantityAllocated);
-            const unitCost = item.averageCost;
+            // Fallback to product.costPrice if averageCost is not set
+            const unitCost = item.averageCost ?? item.product.costPrice;
             const totalValue = unitCost ? quantityOnHand.times(unitCost) : null;
 
             return {
                 productId: item.productId,
                 sku: item.product.sku,
                 productName: item.product.name,
+                unitOfMeasure: item.product.unitOfMeasure ?? 'each',
                 locationId: item.locationId,
                 locationName: item.location.name,
-                quantityOnHand: quantityOnHand.toFixed(4),
-                quantityAllocated: quantityAllocated.toFixed(4),
-                quantityAvailable: quantityAvailable.toFixed(4),
-                unitCost: unitCost?.toFixed(4) ?? null,
-                totalValue: totalValue?.toFixed(2) ?? null,
+                quantityOnHand: quantityOnHand.toNumber(),
+                quantityAllocated: quantityAllocated.toNumber(),
+                quantityAvailable: quantityAvailable.toNumber(),
+                unitCost: unitCost?.toNumber() ?? null,
+                totalValue: totalValue?.toNumber() ?? null,
                 valuationMethod: 'AVERAGE_COST',
             };
         });
 
-        logger.info(`Inventory valuation fetched successfully. Items: ${reportItems.length}`, logContext);
-        return reportItems;
+        logger.info(`Inventory valuation fetched successfully. Items: ${reportItems.length}. Total: ${totalResults}`, logContext);
+        return {
+            results: reportItems,
+            totalResults,
+            page,
+            limit
+        };
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error fetching inventory valuation`, logContext);
@@ -275,15 +307,39 @@ export const getInventoryValuation = async (tenantId: string, params: Pick<Repor
     }
 };
 
-export const getLowStock = async (tenantId: string, params: Pick<ReportQueryDto, 'locationId'>): Promise<LowStockItem[]> => {
+export const getLowStock = async (tenantId: string, params: Pick<ReportQueryDto, 'locationId' | 'search' | 'page' | 'limit'>): Promise<{
+    results: LowStockItem[];
+    totalResults: number;
+    page: number;
+    limit: number;
+}> => {
     const logContext: LogContext = { function: 'getLowStock', tenantId, params };
+
+    const page = params.page ?? 1;
+    const limit = params.limit ?? 50;
+    const skip = (page - 1) * limit;
 
     try {
         const whereFilter: Prisma.InventoryItemWhereInput = {
             tenantId,
             product: { isStockTracked: true, isActive: true },
+            // Only include items that HAVE a reorder point set
+            reorderPoint: { not: null },
         };
         if (params.locationId) whereFilter.locationId = params.locationId;
+
+        // Add search filter
+        if (params.search) {
+            const searchTerm = params.search.trim();
+            whereFilter.product = {
+                isStockTracked: true,
+                isActive: true,
+                OR: [
+                    { name: { contains: searchTerm, mode: 'insensitive' } },
+                    { sku: { contains: searchTerm, mode: 'insensitive' } }
+                ]
+            };
+        }
 
         const items = await prisma.inventoryItem.findMany({
             where: whereFilter,
@@ -294,11 +350,18 @@ export const getLowStock = async (tenantId: string, params: Pick<ReportQueryDto,
                 quantityAllocated: true,
                 reorderPoint: true,
                 quantityIncoming: true,
-                product: { select: { sku: true, name: true } },
+                product: { select: { sku: true, name: true, unitOfMeasure: true } },
                 location: { select: { name: true } },
             },
+            orderBy: [
+                // Order by most critical first (lowest available relative to reorder point)
+                { quantityOnHand: 'asc' }
+            ],
+            skip,
+            take: limit,
         });
 
+        // Filter to only items that are actually below or at reorder point
         const lowStockItems: LowStockItem[] = items
             .filter((item) => {
                 const available = item.quantityOnHand.minus(item.quantityAllocated);
@@ -308,25 +371,31 @@ export const getLowStock = async (tenantId: string, params: Pick<ReportQueryDto,
                 const quantityOnHand = item.quantityOnHand;
                 const quantityAllocated = item.quantityAllocated;
                 const quantityAvailable = quantityOnHand.minus(quantityAllocated);
-                const reorderPoint = item.reorderPoint;
-                const quantityBelowReorder = reorderPoint ? reorderPoint.minus(quantityAvailable) : null;
+                const reorderPoint = item.reorderPoint!;
+                const quantityBelowReorder = reorderPoint.minus(quantityAvailable);
 
                 return {
                     productId: item.productId,
                     sku: item.product.sku,
                     productName: item.product.name,
+                    unitOfMeasure: item.product.unitOfMeasure ?? 'each',
                     locationId: item.locationId,
                     locationName: item.location.name,
-                    quantityOnHand: quantityOnHand.toFixed(4),
-                    quantityAvailable: quantityAvailable.toFixed(4),
-                    reorderPoint: reorderPoint?.toFixed(4) ?? null,
-                    quantityBelowReorder: quantityBelowReorder?.toFixed(4) ?? null,
-                    quantityIncoming: item.quantityIncoming?.toFixed(4) ?? null,
+                    quantityOnHand: quantityOnHand.toNumber(),
+                    quantityAvailable: quantityAvailable.toNumber(),
+                    reorderPoint: reorderPoint.toNumber(),
+                    quantityBelowReorder: quantityBelowReorder.toNumber(),
+                    quantityIncoming: item.quantityIncoming?.toNumber() ?? null,
                 };
             });
 
         logger.info(`Low stock report fetched successfully. Items: ${lowStockItems.length}`, logContext);
-        return lowStockItems;
+        return {
+            results: lowStockItems,
+            totalResults: lowStockItems.length, // Use actual filtered count
+            page,
+            limit
+        };
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error fetching low stock report`, logContext);
@@ -634,46 +703,134 @@ export const getPosSessionReport = async (tenantId: string, params: ReportQueryD
                 location: { select: { name: true } },
                 user: { select: { firstName: true, lastName: true } },
                 transactions: true,
+                // Note: orders relation doesn't exist on PosSession - skipping for now
             },
             orderBy: { startTime: 'desc' },
-        });
+        }) as any[];
 
-        const reportItems = sessions.map((session) => {
+        const reportItems = sessions.map((session: any) => {
+            // Build paymentSummary from transactions
+            const paymentSummary: Record<string, number> = {};
+            session.transactions.forEach((t: any) => {
+                const type = t.transactionType;
+                const amount = t.amount.toNumber();
+                paymentSummary[type] = (paymentSummary[type] || 0) + amount;
+            });
+
+            // Sales by payment type from transactions
             const totalCashSales = session.transactions
-                .filter(t => t.transactionType === 'CASH_SALE')
-                .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
+                .filter((t: any) => t.transactionType === 'CASH_SALE')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const totalCardSales = session.transactions
+                .filter((t: any) => t.transactionType === 'CARD_SALE')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const totalMobileMoneyPayments = session.transactions
+                .filter((t: any) => t.transactionType === 'MOBILE_MONEY_SALE')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const totalCheckPayments = session.transactions
+                .filter((t: any) => t.transactionType === 'CHECK_SALE')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const totalBankTransfer = session.transactions
+                .filter((t: any) => t.transactionType === 'BANK_TRANSFER_SALE')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
+
+            const totalOtherPayments = session.transactions
+                .filter((t: any) => t.transactionType === 'OTHER_SALE')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
 
             const totalCashRefunds = session.transactions
-                .filter(t => t.transactionType === 'CASH_REFUND')
-                .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
+                .filter((t: any) => t.transactionType === 'CASH_REFUND')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
 
             const totalPayIns = session.transactions
-                .filter(t => t.transactionType === 'PAY_IN')
-                .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
+                .filter((t: any) => t.transactionType === 'PAY_IN')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
 
             const totalPayOuts = session.transactions
-                .filter(t => t.transactionType === 'PAY_OUT')
-                .reduce((sum, t) => sum.plus(t.amount), new Prisma.Decimal(0));
+                .filter((t: any) => t.transactionType === 'PAY_OUT')
+                .reduce((sum: any, t: any) => sum.plus(t.amount), new Prisma.Decimal(0));
 
+            // Cash drawer calculation
             const netCashChange = totalCashSales.plus(totalPayIns).minus(totalCashRefunds).minus(totalPayOuts);
             const expectedCash = session.startingCash.plus(netCashChange);
+
+            // Calculate variance
+            const actualCash = session.endingCash ?? null;
+            const difference = session.difference ?? (actualCash ? new Prisma.Decimal(actualCash).minus(expectedCash) : null);
+            const isBalanced = difference ? difference.equals(0) : null;
+
+            // Order-based metrics
+            const completedOrders = session.orders?.filter((o: any) =>
+                o.status === OrderStatus.COMPLETED || o.status === OrderStatus.SHIPPED
+            ) || [];
+
+            const grossSalesInSession = completedOrders.reduce(
+                (sum: any, o: any) => sum.plus(o.totalAmount || 0),
+                new Prisma.Decimal(0)
+            );
+
+            const taxCollectedInSession = completedOrders.reduce(
+                (sum: any, o: any) => sum.plus(o.taxAmount || 0),
+                new Prisma.Decimal(0)
+            );
+
+            const discountsGivenInSession = completedOrders.reduce(
+                (sum: any, o: any) => sum.plus(o.discountAmount || 0),
+                new Prisma.Decimal(0)
+            );
+
+            // Net sales = Gross - Refunds
+            const netSalesInSession = grossSalesInSession.minus(totalCashRefunds);
+
+            // Transaction count and average
+            const totalTransactions = completedOrders.length || session.transactions.length;
+            const averageTransactionValue = totalTransactions > 0
+                ? netSalesInSession.dividedBy(totalTransactions)
+                : new Prisma.Decimal(0);
 
             return {
                 sessionId: session.id,
                 startTime: session.startTime.toISOString(),
-                endTime: session.endTime?.toISOString(),
+                endTime: session.endTime?.toISOString() || null,
                 locationId: session.locationId,
                 locationName: session.location.name,
                 terminalId: session.posTerminalId,
                 userId: session.userId,
-                userName: `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim(),
+                userName: `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim() || 'Unknown',
                 status: session.status,
+                notes: (session as any).notes || null,
+                // Cash drawer
                 startingCash: session.startingCash.toFixed(2),
-                endingCash: session.endingCash?.toFixed(2),
+                endingCash: session.endingCash?.toFixed(2) || null,
                 calculatedCash: session.calculatedCash?.toFixed(2) ?? expectedCash.toFixed(2),
-                difference: session.difference?.toFixed(2),
+                expectedCashInDrawer: expectedCash.toFixed(2),
+                difference: difference?.toFixed(2) || null,
+                isBalanced,
+                // Cash transactions
                 totalCashSales: totalCashSales.toFixed(2),
-                totalTransactions: session.transactions.length,
+                totalCashRefunds: totalCashRefunds.toFixed(2),
+                totalPayIns: totalPayIns.toFixed(2),
+                totalPayOuts: totalPayOuts.toFixed(2),
+                netCashChange: netCashChange.toFixed(2),
+                // Sales by payment method
+                cardSalesTotal: totalCardSales.toFixed(2),
+                mobileMoneyTotal: totalMobileMoneyPayments.toFixed(2),
+                checkPaymentsTotal: totalCheckPayments.toFixed(2),
+                bankTransferTotal: totalBankTransfer.toFixed(2),
+                otherPaymentsTotal: totalOtherPayments.toFixed(2),
+                // Payment summary (for detailed breakdown)
+                paymentSummary,
+                // Order metrics
+                grossSalesInSession: grossSalesInSession.toFixed(2),
+                netSalesInSession: netSalesInSession.toFixed(2),
+                taxCollectedInSession: taxCollectedInSession.toFixed(2),
+                discountsGivenInSession: discountsGivenInSession.toFixed(2),
+                totalTransactions,
+                averageTransactionValue: averageTransactionValue.toFixed(2),
             };
         });
 

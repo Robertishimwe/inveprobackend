@@ -1038,6 +1038,55 @@ const getInventoryItemById = async (
   }
 };
 
+/** Update reorder settings for an Inventory Item */
+const updateInventoryItem = async (
+  inventoryItemId: string,
+  data: { reorderPoint?: number; reorderQuantity?: number },
+  tenantId: string
+): Promise<InventoryItem> => {
+  const logContext: LogContext = {
+    function: "updateInventoryItem",
+    inventoryItemId,
+    tenantId,
+  };
+
+  try {
+    // First verify the item exists and belongs to this tenant
+    const existing = await prisma.inventoryItem.findFirst({
+      where: { id: inventoryItemId, tenantId },
+    });
+
+    if (!existing) {
+      throw new ApiError(httpStatus.NOT_FOUND, "Inventory item not found.");
+    }
+
+    // Build update data
+    const updateData: Prisma.InventoryItemUpdateInput = {};
+    if (data.reorderPoint !== undefined) {
+      updateData.reorderPoint = data.reorderPoint === null ? null : new Prisma.Decimal(data.reorderPoint);
+    }
+    if (data.reorderQuantity !== undefined) {
+      updateData.reorderQuantity = data.reorderQuantity === null ? null : new Prisma.Decimal(data.reorderQuantity);
+    }
+
+    const updated = await prisma.inventoryItem.update({
+      where: { id: inventoryItemId },
+      data: updateData,
+    });
+
+    logger.info(`Inventory item updated successfully`, logContext);
+    return updated;
+  } catch (error: any) {
+    if (error instanceof ApiError) throw error;
+    logContext.error = error;
+    logger.error(`Error updating inventory item`, logContext);
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      "Failed to update inventory item."
+    );
+  }
+};
+
 // Export all public service methods
 export const inventoryService = {
   // Commands
@@ -1045,6 +1094,7 @@ export const inventoryService = {
   createTransfer,
   shipTransfer,
   receiveTransfer,
+  updateInventoryItem,
   // Queries
   queryAdjustments,
   getAdjustmentById,

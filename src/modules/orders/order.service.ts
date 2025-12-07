@@ -43,10 +43,48 @@ export type OrderWithDetails = Order & {
 // --- Helper: Generate Order Number ---
 async function generateOrderNumber(tenantId: string): Promise<string> {
     const prefix = "SO-";
-    // WARNING: Prone to race conditions. Use DB sequence or dedicated service in production.
-    const count = await prisma.order.count({ where: { tenantId } });
-    const nextNum = count + 1;
-    return `${prefix}${nextNum.toString().padStart(6, '0')}`;
+    const maxAttempts = 5;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // Find the highest existing order number for this tenant
+        const lastOrder = await prisma.order.findFirst({
+            where: {
+                tenantId,
+                orderNumber: { startsWith: prefix }
+            },
+            orderBy: { orderNumber: 'desc' },
+            select: { orderNumber: true }
+        });
+
+        let nextNum: number;
+        if (lastOrder?.orderNumber) {
+            // Extract the numeric part from "SO-000040" -> 40, then add 1
+            const numericPart = parseInt(lastOrder.orderNumber.replace(prefix, ''), 10);
+            nextNum = isNaN(numericPart) ? 1 : numericPart + 1;
+        } else {
+            nextNum = 1;
+        }
+
+        const orderNumber = `${prefix}${nextNum.toString().padStart(6, '0')}`;
+
+        // Check if this number already exists (race condition check)
+        const exists = await prisma.order.count({
+            where: { tenantId, orderNumber }
+        });
+
+        if (exists === 0) {
+            return orderNumber;
+        }
+
+        // If exists, increment and retry
+        logger.warn(`Order number ${orderNumber} already exists, retrying (attempt ${attempt + 1}/${maxAttempts})`);
+    }
+
+    // If all retries fail, generate with timestamp to guarantee uniqueness
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const fallbackNumber = `${prefix}${timestamp}`;
+    logger.warn(`Falling back to timestamp-based order number: ${fallbackNumber}`);
+    return fallbackNumber;
 }
 
 /**

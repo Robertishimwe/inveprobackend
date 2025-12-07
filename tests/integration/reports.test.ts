@@ -279,7 +279,11 @@ describe('Reports Module Integration Tests', () => {
                 .query({ locationId });
 
             expect(res.status).toBe(httpStatus.OK);
-            expect(Array.isArray(res.body)).toBe(true);
+            expect(res.body).toHaveProperty('results');
+            expect(res.body).toHaveProperty('totalResults');
+            expect(res.body).toHaveProperty('page');
+            expect(res.body).toHaveProperty('limit');
+            expect(Array.isArray(res.body.results)).toBe(true);
         });
 
         test('should get inventory valuation', async () => {
@@ -289,7 +293,11 @@ describe('Reports Module Integration Tests', () => {
                 .query({ locationId });
 
             expect(res.status).toBe(httpStatus.OK);
-            expect(Array.isArray(res.body)).toBe(true);
+            expect(res.body).toHaveProperty('results');
+            expect(res.body).toHaveProperty('totalResults');
+            expect(res.body).toHaveProperty('page');
+            expect(res.body).toHaveProperty('limit');
+            expect(Array.isArray(res.body.results)).toBe(true);
         });
 
         test('should get low stock report', async () => {
@@ -298,7 +306,11 @@ describe('Reports Module Integration Tests', () => {
                 .set('Authorization', `Bearer ${accessToken}`);
 
             expect(res.status).toBe(httpStatus.OK);
-            expect(Array.isArray(res.body)).toBe(true);
+            expect(res.body).toHaveProperty('results');
+            expect(res.body).toHaveProperty('totalResults');
+            expect(res.body).toHaveProperty('page');
+            expect(res.body).toHaveProperty('limit');
+            expect(Array.isArray(res.body.results)).toBe(true);
         });
     });
 });

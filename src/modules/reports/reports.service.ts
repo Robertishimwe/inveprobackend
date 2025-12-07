@@ -221,9 +221,18 @@ const getSalesSummary = async (tenantId: string, params: Pick<ReportQueryDto, 's
     }
 };
 
-const getInventoryOnHand = async (tenantId: string, params: Pick<ReportQueryDto, 'locationId' | 'productId' | 'categoryId'>): Promise<InventoryOnHandItem[]> => {
+const getInventoryOnHand = async (tenantId: string, params: Pick<ReportQueryDto, 'locationId' | 'productId' | 'categoryId' | 'search' | 'page' | 'limit'>): Promise<{
+    results: InventoryOnHandItem[];
+    totalResults: number;
+    page: number;
+    limit: number;
+}> => {
     const logContext: LogContext = { function: 'getInventoryOnHand', tenantId, params };
     const startTime = Date.now();
+
+    const page = params.page ?? 1;
+    const limit = params.limit ?? 50;
+    const skip = (page - 1) * limit;
 
     const whereFilter: Prisma.InventoryItemWhereInput = { tenantId };
     if (params.locationId) whereFilter.locationId = params.locationId;
@@ -241,20 +250,35 @@ const getInventoryOnHand = async (tenantId: string, params: Pick<ReportQueryDto,
         hasProductFilter = true;
     }
 
+    // Add search filter (product name or SKU)
+    if (params.search) {
+        const searchTerm = params.search.trim();
+        productFilter.OR = [
+            { name: { contains: searchTerm, mode: 'insensitive' } },
+            { sku: { contains: searchTerm, mode: 'insensitive' } }
+        ];
+        hasProductFilter = true;
+    }
+
     if (hasProductFilter) {
         whereFilter.product = productFilter;
     }
 
     try {
+        // Get total count for pagination
+        const totalResults = await prisma.inventoryItem.count({ where: whereFilter });
+
         const items = await prisma.inventoryItem.findMany({
             where: whereFilter,
             select: {
                 productId: true, locationId: true, quantityOnHand: true, quantityAllocated: true,
                 averageCost: true,
-                product: { select: { sku: true, name: true } },
+                product: { select: { sku: true, name: true, unitOfMeasure: true } },
                 location: { select: { name: true } },
             },
-            orderBy: [{ location: { name: 'asc' } }, { product: { name: 'asc' } }]
+            orderBy: [{ location: { name: 'asc' } }, { product: { name: 'asc' } }],
+            skip,
+            take: limit
         });
 
         const reportItems: InventoryOnHandItem[] = items.map(item => {
@@ -268,19 +292,26 @@ const getInventoryOnHand = async (tenantId: string, params: Pick<ReportQueryDto,
                 productId: item.productId,
                 sku: item.product.sku,
                 productName: item.product.name,
+                unitOfMeasure: item.product.unitOfMeasure ?? 'each',
                 locationId: item.locationId,
                 locationName: item.location.name,
-                quantityOnHand: quantityOnHand.toFixed(4),
-                quantityAllocated: quantityAllocated.toFixed(4),
-                quantityAvailable: quantityAvailable.toFixed(4),
-                unitCost: unitCost?.toFixed(4) ?? null,
-                totalValue: totalValue?.toFixed(2) ?? null,
+                quantityOnHand: quantityOnHand.toNumber(),
+                quantityAllocated: quantityAllocated.toNumber(),
+                quantityAvailable: quantityAvailable.toNumber(),
+                unitCost: unitCost?.toNumber() ?? null,
+                totalValue: totalValue?.toNumber() ?? null,
             };
         });
 
         const endTime = Date.now();
-        logger.info(`Inventory on hand fetched successfully. Items: ${reportItems.length}. Duration: ${endTime - startTime}ms`, logContext);
-        return reportItems;
+        logger.info(`Inventory on hand fetched successfully. Items: ${reportItems.length}. Total: ${totalResults}. Duration: ${endTime - startTime}ms`, logContext);
+
+        return {
+            results: reportItems,
+            totalResults,
+            page,
+            limit
+        };
 
     } catch (error: any) {
         logContext.error = error;
@@ -288,6 +319,7 @@ const getInventoryOnHand = async (tenantId: string, params: Pick<ReportQueryDto,
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve inventory on hand.');
     }
 };
+
 
 export const reportingService = {
     getDashboardKpis,
