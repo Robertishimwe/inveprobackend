@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">77.77% </span>
+                <span class="strong">75.75% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>49/63</span>
+                <span class='fraction'>50/66</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">30% </span>
+                <span class="strong">31.81% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>6/20</span>
+                <span class='fraction'>7/22</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">87.5% </span>
+                <span class="strong">84.74% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>49/56</span>
+                <span class='fraction'>50/59</span>
             </div>
         
             
@@ -223,7 +223,19 @@
 <a name='L158'></a><a href='#L158'>158</a>
 <a name='L159'></a><a href='#L159'>159</a>
 <a name='L160'></a><a href='#L160'>160</a>
-<a name='L161'></a><a href='#L161'>161</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-yes">22x</span>
@@ -262,13 +274,26 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -285,9 +310,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
@@ -418,7 +442,8 @@ const getCustomers = catchAsync(async (req: Request, res: Response) =&gt; {
         'phone',        // Filter by phone number (contains)
         'companyName',  // Filter by company name (contains)
         'customerGroupId',// Filter by specific customer group ID
-        'taxExempt'     // Filter by tax-exempt status ('true' or 'false')
+        'taxExempt',    // Filter by tax-exempt status ('true' or 'false')
+        'search',       // Unified search across all text fields
         // Add isActive filter if you add that field to the Customer model
     ]);
     // Define allowed options for sorting and pagination
@@ -427,27 +452,38 @@ const getCustomers = catchAsync(async (req: Request, res: Response) =&gt; {
     // Build Prisma WhereInput object, always including the tenantId
     const filter: Prisma.CustomerWhereInput = { tenantId }; // Automatically scope by tenant
 &nbsp;
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.firstName) <span class="cstat-no" title="statement not covered" >filter.firstName = { contains: filterParams.firstName as string, mode: 'insensitive' };</span>
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.lastName) <span class="cstat-no" title="statement not covered" >filter.lastName = { contains: filterParams.lastName as string, mode: 'insensitive' };</span>
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.email) <span class="cstat-no" title="statement not covered" >filter.email = { contains: filterParams.email as string, mode: 'insensitive' };</span>
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.phone) <span class="cstat-no" title="statement not covered" >filter.phone = { contains: filterParams.phone as string };</span>
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.companyName) <span class="cstat-no" title="statement not covered" >filter.companyName = { contains: filterParams.companyName as string, mode: 'insensitive' };</span>
+    // Unified search - searches across multiple fields
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.search) {
+        const searchTerm = <span class="cstat-no" title="statement not covered" >filterParams.search as string;</span>
+<span class="cstat-no" title="statement not covered" >        filter.OR = [</span>
+            { firstName: { contains: searchTerm, mode: 'insensitive' } },
+            { lastName: { contains: searchTerm, mode: 'insensitive' } },
+            { email: { contains: searchTerm, mode: 'insensitive' } },
+            { phone: { contains: searchTerm } },
+            { companyName: { contains: searchTerm, mode: 'insensitive' } },
+            // Search in customAttributes JSON field (PostgreSQL)
+            { customAttributes: { path: [], string_contains: searchTerm } },
+        ];
+    } else {
+        // Individual field filters (only apply if unified search is not used)
+        <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.firstName) <span class="cstat-no" title="statement not covered" >filter.firstName = { contains: filterParams.firstName as string, mode: 'insensitive' };</span>
+        <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.lastName) <span class="cstat-no" title="statement not covered" >filter.lastName = { contains: filterParams.lastName as string, mode: 'insensitive' };</span>
+        <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.email) <span class="cstat-no" title="statement not covered" >filter.email = { contains: filterParams.email as string, mode: 'insensitive' };</span>
+        <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.phone) <span class="cstat-no" title="statement not covered" >filter.phone = { contains: filterParams.phone as string };</span>
+        <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.companyName) <span class="cstat-no" title="statement not covered" >filter.companyName = { contains: filterParams.companyName as string, mode: 'insensitive' };</span>
+&nbsp;
+        // Combined name search (example - searching first OR last name)
+        <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.name) {
+            const name = <span class="cstat-no" title="statement not covered" >filterParams.name as string;</span>
+<span class="cstat-no" title="statement not covered" >            filter.OR = [</span>
+                { firstName: { contains: name, mode: 'insensitive' } },
+                { lastName: { contains: name, mode: 'insensitive' } },
+            ];
+        }
+    }
+&nbsp;
     <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.customerGroupId) <span class="cstat-no" title="statement not covered" >filter.customerGroupId = filterParams.customerGroupId as string;</span>
     <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.taxExempt !== undefined) <span class="cstat-no" title="statement not covered" >filter.taxExempt = filterParams.taxExempt === 'true';</span>
-&nbsp;
-    // Combined name search (example - searching first OR last name)
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (filterParams.name) {
-        const name = <span class="cstat-no" title="statement not covered" >filterParams.name as string;</span>
-<span class="cstat-no" title="statement not covered" >        filter.OR = [</span>
-            { firstName: { contains: name, mode: 'insensitive' } },
-            { lastName: { contains: name, mode: 'insensitive' } },
-            // Could add companyName here too if desired
-            // { companyName: { contains: name, mode: 'insensitive' } },
-        ];
-        // Remove individual firstName/lastName filters if combined name search is used? Optional.
-        // delete filter.firstName;
-        // delete filter.lastName;
-    }
 &nbsp;
     // Build Prisma OrderBy array
     const orderBy: Prisma.CustomerOrderByWithRelationInput[] = [];
@@ -550,7 +586,7 @@ export const customerController = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-07T11:12:30.171Z
+                at 2025-12-07T21:59:26.006Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
