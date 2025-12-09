@@ -260,9 +260,22 @@ async function main() {
     console.log(`✅ Tenant '${tenant.name}' ensured with ID: ${tenant.id}`);
 
     // 3. Upsert Roles and Assign Permissions using the helper function
-    // Admin Role (All Permissions)
-    const adminPermissionKeys = allPermissions.map(p => p.permissionKey);
-    const adminRole = await upsertRoleWithPermissions(tenant.id, ADMIN_ROLE_NAME, 'Administrator with full system access', ADMIN_ROLE_SYSTEM, adminPermissionKeys);
+    // Admin Role (All Permissions EXCEPT Super Admin tenant management permissions)
+    // Super Admin permissions should NOT be given to tenant admins - they are for system-level operations
+    const superAdminOnlyPermissions = [
+        'tenant:create:any',
+        'tenant:read:any',
+        'tenant:update:any',
+        'tenant:delete:any',
+        'tenant:manage:admins',
+        'user:create:any', // Creating users without tenant context
+        'system:config:read',
+        'system:config:update',
+    ];
+    const adminPermissionKeys = allPermissions
+        .map(p => p.permissionKey)
+        .filter(key => !superAdminOnlyPermissions.includes(key));
+    const adminRole = await upsertRoleWithPermissions(tenant.id, ADMIN_ROLE_NAME, 'Administrator with full tenant access (not super admin)', ADMIN_ROLE_SYSTEM, adminPermissionKeys);
 
     // Manager Role
     const managerPermissionKeys = [

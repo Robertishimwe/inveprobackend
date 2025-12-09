@@ -38,10 +38,10 @@ const getTenants = catchAsync(async (req: Request, res: Response) => {
     if (filterParams.name) filter.name = { contains: filterParams.name as string, mode: 'insensitive' };
     // Validate status against enum values before applying filter
     if (filterParams.status && Object.values(TenantStatus).includes(filterParams.status as TenantStatus)) {
-         filter.status = filterParams.status as TenantStatus;
+        filter.status = filterParams.status as TenantStatus;
     } else if (filterParams.status) {
-         // If an invalid status is provided, throw an error
-         throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(TenantStatus).join(', ')}`);
+        // If an invalid status is provided, throw an error
+        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid status value. Must be one of: ${Object.values(TenantStatus).join(', ')}`);
     }
 
     // Build Prisma OrderBy array
@@ -156,6 +156,66 @@ const updateOwnTenantConfig = catchAsync(async (req: Request, res: Response) => 
     res.status(httpStatus.OK).send(tenant);
 });
 
+/**
+ * Controller for Tenant Admin to send a test email to verify SMTP configuration.
+ */
+const sendTestEmail = catchAsync(async (req: Request, res: Response) => {
+    const tenantId = getTenantIdFromRequest(req);
+    const { email } = req.body;
+
+    if (!email) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Email address is required');
+    }
+
+    // Import email service dynamically to avoid circular dependencies
+    const { sendEmail, verifySmtpConnection } = await import('../notifications/email.service');
+
+    // First verify connection
+    const verifyResult = await verifySmtpConnection(tenantId);
+    if (!verifyResult.success) {
+        throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `SMTP connection failed: ${verifyResult.error || 'Unknown error'}. Please check your SMTP settings.`
+        );
+    }
+
+    // Send test email
+    const result = await sendEmail(tenantId, {
+        to: email,
+        subject: '✅ InvePro Test Email - SMTP Configuration Successful!',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h1 style="color: #10b981;">🎉 SMTP Configuration Verified!</h1>
+                <p>Congratulations! Your InvePro email settings are working correctly.</p>
+                <p>You will now receive notifications for:</p>
+                <ul>
+                    <li>📦 Low Stock Alerts</li>
+                    <li>🚫 Stock Out Warnings</li>
+                    <li>📋 Purchase Order Updates</li>
+                </ul>
+                <hr style="border: 1px solid #e5e7eb; margin: 20px 0;" />
+                <p style="color: #6b7280; font-size: 12px;">
+                    This is a test email from your InvePro inventory system.
+                </p>
+            </div>
+        `,
+        text: 'SMTP Configuration Verified! Your InvePro email settings are working correctly.',
+    });
+
+    if (!result.success) {
+        throw new ApiError(
+            httpStatus.INTERNAL_SERVER_ERROR,
+            `Failed to send email: ${result.error}`
+        );
+    }
+
+    res.status(httpStatus.OK).send({
+        success: true,
+        message: `Test email sent successfully to ${email}`,
+        messageId: result.messageId,
+    });
+});
+
 
 // Export all controller methods
 export const tenantController = {
@@ -169,4 +229,5 @@ export const tenantController = {
     // Tenant Admin actions
     getOwnTenant,
     updateOwnTenantConfig,
+    sendTestEmail,
 };

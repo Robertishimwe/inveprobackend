@@ -31,6 +31,7 @@ import returnRoutes from '@/modules/returns/return.routes'; // Example of anothe
 import stockCountRoutes from '@/modules/stock-counts/stock-count.routes';
 import reportRoutes from '@/modules/reports/reports.routes';
 import sseRoutes from '@/routes/sse.routes';
+import notificationRoutes from '@/modules/notifications/notification.routes';
 // Add imports for any other modules (e.g., reporting)
 
 const app: Express = express();
@@ -104,6 +105,7 @@ apiRouter.use('/returns', returnRoutes); // Example of another module
 apiRouter.use('/stock-counts', stockCountRoutes);
 apiRouter.use('/reports', reportRoutes);
 apiRouter.use('/sse', sseRoutes); // Real-time SSE for stock updates
+apiRouter.use('/notifications', notificationRoutes); // Notification management
 
 app.use('/api/v1', apiRouter);
 

@@ -12,11 +12,16 @@ import logger from '@/utils/logger';
 // Key: `${tenantId}:${locationId}`, Value: Set of Response objects
 const clients = new Map<string, Set<Response>>();
 
+// Store all clients by tenant (for tenant-wide broadcasts like notifications)
+// Key: tenantId, Value: Set of Response objects
+const tenantClients = new Map<string, Set<Response>>();
+
 // Event types
 export enum SSEEventType {
     STOCK_UPDATE = 'STOCK_UPDATE',
     ORDER_UPDATE = 'ORDER_UPDATE',
     SUSPENDED_COUNT_UPDATE = 'SUSPENDED_COUNT_UPDATE',
+    NOTIFICATION = 'NOTIFICATION',
 }
 
 export interface StockUpdateEvent {
@@ -35,7 +40,18 @@ export interface SuspendedCountUpdateEvent {
     timestamp: string;
 }
 
-type SSEEvent = StockUpdateEvent | SuspendedCountUpdateEvent;
+export interface NotificationEvent {
+    type: SSEEventType.NOTIFICATION;
+    id: string;
+    alertType: string;
+    priority: string;
+    title: string;
+    message: string;
+    data: any;
+    createdAt: string;
+}
+
+type SSEEvent = StockUpdateEvent | SuspendedCountUpdateEvent | NotificationEvent;
 
 /**
  * Register a new SSE client connection
@@ -48,6 +64,12 @@ export const registerClient = (tenantId: string, locationId: string, res: Respon
     }
 
     clients.get(key)!.add(res);
+
+    // Also track by tenant for tenant-wide broadcasts
+    if (!tenantClients.has(tenantId)) {
+        tenantClients.set(tenantId, new Set());
+    }
+    tenantClients.get(tenantId)!.add(res);
 
     const clientCount = clients.get(key)!.size;
     logger.info(`SSE client connected`, { tenantId, locationId, clientCount });
@@ -71,6 +93,15 @@ export const removeClient = (tenantId: string, locationId: string, res: Response
         }
 
         logger.info(`SSE client disconnected`, { tenantId, locationId, remainingClients: clientSet.size });
+    }
+
+    // Also remove from tenant-wide tracking
+    const tenantClientSet = tenantClients.get(tenantId);
+    if (tenantClientSet) {
+        tenantClientSet.delete(res);
+        if (tenantClientSet.size === 0) {
+            tenantClients.delete(tenantId);
+        }
     }
 };
 
@@ -154,12 +185,62 @@ export const getClientCount = (tenantId?: string, locationId?: string): number =
     return total;
 };
 
+/**
+ * Broadcast a notification to all clients in a tenant
+ */
+export const broadcastNotification = (
+    tenantId: string,
+    notification: {
+        id: string;
+        type: string;
+        priority: string;
+        title: string;
+        message: string;
+        data: any;
+        createdAt: string;
+    }
+): void => {
+    const clientSet = tenantClients.get(tenantId);
+
+    if (!clientSet || clientSet.size === 0) {
+        logger.debug(`No SSE clients connected for notification broadcast`, { tenantId });
+        return;
+    }
+
+    const event: NotificationEvent = {
+        type: SSEEventType.NOTIFICATION,
+        id: notification.id,
+        alertType: notification.type,
+        priority: notification.priority,
+        title: notification.title,
+        message: notification.message,
+        data: notification.data,
+        createdAt: notification.createdAt,
+    };
+
+    const eventData = `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+
+    let sentCount = 0;
+    for (const client of clientSet) {
+        try {
+            client.write(eventData);
+            sentCount++;
+        } catch (err) {
+            logger.warn(`Failed to send notification SSE event to client`, { error: err });
+        }
+    }
+
+    logger.debug(`Notification broadcast`, { tenantId, type: notification.type, sentCount });
+};
+
 export const sseManager = {
     registerClient,
     removeClient,
     broadcastStockUpdate,
     broadcastSuspendedCountUpdate,
+    broadcastNotification,
     getClientCount,
 };
 
 export default sseManager;
+

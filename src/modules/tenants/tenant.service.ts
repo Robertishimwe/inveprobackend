@@ -18,7 +18,7 @@ import { emailService } from '@/utils/email.service';
 // import pick from '@/utils/pick'; // Import pick utility
 
 // Define log context type if not already defined globally
-type LogContext = { function?: string; tenantId?: string | null; adminUserId?: string | null; userId?: string | null; roleId?: string | null; permissionId?: string | null; data?: any; error?: any; [key: string]: any; };
+type LogContext = { function?: string; tenantId?: string | null; adminUserId?: string | null; userId?: string | null; roleId?: string | null; permissionId?: string | null; data?: any; error?: any;[key: string]: any; };
 
 // Type helpers (can be moved to a types file)
 export type RoleWithPermissions = Role & { permissions: ({ permission: Permission })[] };
@@ -41,7 +41,7 @@ async function upsertRoleWithPermissions(
     description: string,
     isSystemRole: boolean,
     permissionKeys: string[] // Array of permissionKey strings
-): Promise<{id: string}> { // Return only ID
+): Promise<{ id: string }> { // Return only ID
     const logContext: LogContext = { function: 'upsertRoleWithPermissions', tenantId, roleName };
 
     let permissionIdsToAssign: string[] = [];
@@ -120,14 +120,14 @@ const createTenantWithDefaults = async (data: CreateTenantDto): Promise<Tenant> 
         try {
             const parsed = JSON.parse(data.initialConfiguration);
             if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-                 initialConfigObject = parsed as Prisma.JsonObject;
+                initialConfigObject = parsed as Prisma.JsonObject;
             } else { throw new Error('Parsed configuration is not a valid JSON object.'); }
         }
         catch (e: any) {
             logContext.error = e;
             logger.warn(`Tenant creation failed: Invalid JSON for initialConfiguration`, logContext);
             throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid JSON format for initial configuration.');
-         }
+        }
     }
 
     // 5. Use transaction for atomicity
@@ -151,16 +151,16 @@ const createTenantWithDefaults = async (data: CreateTenantDto): Promise<Tenant> 
 
             // Create Default Roles for the new tenant
             const allPermissions = await tx.permission.findMany({ select: { id: true, permissionKey: true } });
-            const createdRolesMap = new Map<string, {id: string}>();
+            const createdRolesMap = new Map<string, { id: string }>();
             for (const roleDef of DEFAULT_TENANT_ROLES_CONFIG) {
-                 const relevantPermissionKeys = roleDef.permissions.includes('ALL') ? allPermissions.map(p => p.permissionKey) : roleDef.permissions;
-                 const role = await upsertRoleWithPermissions(tx, tenant.id, roleDef.name, roleDef.description, roleDef.isSystemRole, relevantPermissionKeys);
-                 createdRolesMap.set(roleDef.name, role);
+                const relevantPermissionKeys = roleDef.permissions.includes('ALL') ? allPermissions.map(p => p.permissionKey) : roleDef.permissions;
+                const role = await upsertRoleWithPermissions(tx, tenant.id, roleDef.name, roleDef.description, roleDef.isSystemRole, relevantPermissionKeys);
+                createdRolesMap.set(roleDef.name, role);
             }
             const adminRoleId = createdRolesMap.get(TENANT_ADMIN_ROLE_NAME)?.id;
             if (!adminRoleId) {
-                 logger.error(`Default "${TENANT_ADMIN_ROLE_NAME}" role missing after creation for tenant ${tenant.id}`, logContext);
-                 throw new Error(`Failed to create or find the default "${TENANT_ADMIN_ROLE_NAME}" role during tenant setup.`);
+                logger.error(`Default "${TENANT_ADMIN_ROLE_NAME}" role missing after creation for tenant ${tenant.id}`, logContext);
+                throw new Error(`Failed to create or find the default "${TENANT_ADMIN_ROLE_NAME}" role during tenant setup.`);
             }
 
             // Associate the initial admin user with the new tenant AND the admin role
@@ -176,8 +176,8 @@ const createTenantWithDefaults = async (data: CreateTenantDto): Promise<Tenant> 
                     subject: `Tenant "${tenant.name}" Created`,
                     text: `Hello ${initialAdminUser.firstName || 'Admin'},\n\nThe tenant "${tenant.name}" has been successfully created and your user account has been assigned as the administrator.`
                 });
-                 logger.info(`Sent tenant creation notification email to ${initialAdminUser.email}`, logContext);
-            } catch(emailError) {
+                logger.info(`Sent tenant creation notification email to ${initialAdminUser.email}`, logContext);
+            } catch (emailError) {
                 logger.error(`Failed to send tenant creation notification email to ${initialAdminUser.email} for tenant ${tenant.id}`, { ...logContext, error: emailError });
                 // Non-fatal error for tenant creation
             }
@@ -189,14 +189,14 @@ const createTenantWithDefaults = async (data: CreateTenantDto): Promise<Tenant> 
         return newTenant;
 
     } catch (error: any) {
-         if (error instanceof ApiError) throw error;
-         logContext.error = error;
-         logger.error(`Error creating tenant with defaults`, logContext);
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             const target = (error.meta?.target as string[])?.join(', ');
-             throw new ApiError(httpStatus.CONFLICT, `Tenant creation failed due to unique constraint violation on: ${target || 'unknown field'}.`);
-         }
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to create tenant.');
+        if (error instanceof ApiError) throw error;
+        logContext.error = error;
+        logger.error(`Error creating tenant with defaults`, logContext);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            const target = (error.meta?.target as string[])?.join(', ');
+            throw new ApiError(httpStatus.CONFLICT, `Tenant creation failed due to unique constraint violation on: ${target || 'unknown field'}.`);
+        }
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to create tenant.');
     }
 };
 
@@ -211,21 +211,21 @@ const queryTenants = async (filter: Prisma.TenantWhereInput, orderBy: Prisma.Ten
         if ('tenantId' in queryFilter) delete queryFilter.tenantId; // Defensive removal
 
         const [tenants, totalResults] = await prisma.$transaction([
-            prisma.tenant.findMany({ where: queryFilter, include: { _count: { select: { users: true }} }, orderBy, skip, take: limit }),
+            prisma.tenant.findMany({ where: queryFilter, include: { _count: { select: { users: true } } }, orderBy, skip, take: limit }),
             prisma.tenant.count({ where: queryFilter }),
         ]);
         logger.debug(`Tenant query successful, found ${tenants.length} of ${totalResults}`, logContext);
         return { tenants, totalResults };
     } catch (error: any) {
-         logContext.error = error;
-         logger.error(`Error querying tenants`, logContext);
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve tenants.');
+        logContext.error = error;
+        logger.error(`Error querying tenants`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve tenants.');
     }
 };
 
 /** Get Tenant By ID (Super Admin) */
 const getTenantById = async (tenantId: string): Promise<Tenant | null> => {
-     const logContext: LogContext = { function: 'getTenantById', tenantId };
+    const logContext: LogContext = { function: 'getTenantById', tenantId };
     try {
         const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
         if (!tenant) {
@@ -243,62 +243,62 @@ const getTenantById = async (tenantId: string): Promise<Tenant | null> => {
 
 /** Update Tenant By ID (Super Admin) - Handles status changes including SUSPENDED */
 const updateTenantById = async (tenantId: string, updateData: UpdateTenantDto): Promise<Tenant> => {
-     const logContext: LogContext = { function: 'updateTenantById', tenantId, data: updateData };
-     const existing = await prisma.tenant.findUnique({ where: { id: tenantId } });
-     if (!existing) throw new ApiError(httpStatus.NOT_FOUND, 'Tenant not found.');
+    const logContext: LogContext = { function: 'updateTenantById', tenantId, data: updateData };
+    const existing = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!existing) throw new ApiError(httpStatus.NOT_FOUND, 'Tenant not found.');
 
-     if (updateData.status === TenantStatus.DEACTIVATED) {
+    if (updateData.status === TenantStatus.DEACTIVATED) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Use the dedicated deactivate endpoint to deactivate a tenant.');
-     }
+    }
 
-     if (updateData.name && updateData.name !== existing.name) {
-         const nameExists = await prisma.tenant.count({ where: { name: updateData.name, id: { not: tenantId } } });
-         if (nameExists > 0) throw new ApiError(httpStatus.CONFLICT, `Tenant name "${updateData.name}" already exists.`);
-     }
+    if (updateData.name && updateData.name !== existing.name) {
+        const nameExists = await prisma.tenant.count({ where: { name: updateData.name, id: { not: tenantId } } });
+        if (nameExists > 0) throw new ApiError(httpStatus.CONFLICT, `Tenant name "${updateData.name}" already exists.`);
+    }
 
-     const dataToUpdate: Prisma.TenantUpdateInput = {};
-     if (updateData.name !== undefined) dataToUpdate.name = updateData.name;
-     if (updateData.status !== undefined) dataToUpdate.status = updateData.status;
-     if (updateData.configuration !== undefined) {
-         if (updateData.configuration === null) { dataToUpdate.configuration = Prisma.JsonNull; }
-         else {
-             try {
-                  if (typeof updateData.configuration === 'string') {
-                     dataToUpdate.configuration = JSON.parse(updateData.configuration);
-                  } else { throw new Error("Configuration must be a valid JSON string or null."); }
-                }
-             catch (e: any) {
+    const dataToUpdate: Prisma.TenantUpdateInput = {};
+    if (updateData.name !== undefined) dataToUpdate.name = updateData.name;
+    if (updateData.status !== undefined) dataToUpdate.status = updateData.status;
+    if (updateData.configuration !== undefined) {
+        if (updateData.configuration === null) { dataToUpdate.configuration = Prisma.JsonNull; }
+        else {
+            try {
+                if (typeof updateData.configuration === 'string') {
+                    dataToUpdate.configuration = JSON.parse(updateData.configuration);
+                } else { throw new Error("Configuration must be a valid JSON string or null."); }
+            }
+            catch (e: any) {
                 logContext.error = e;
                 logger.warn("Invalid JSON format for configuration during update.", logContext);
                 throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid JSON format for configuration.');
-             }
-         }
-     }
+            }
+        }
+    }
 
-     // Add new fields
-     if (updateData.companyPhone !== undefined) dataToUpdate.companyPhone = updateData.companyPhone;
-     if (updateData.website !== undefined) dataToUpdate.website = updateData.website;
-     if (updateData.email !== undefined) dataToUpdate.email = updateData.email;
-     if (updateData.companyAddress !== undefined) dataToUpdate.companyAddress = updateData.companyAddress;
-     if (updateData.tin !== undefined) dataToUpdate.tin = updateData.tin;
+    // Add new fields
+    if (updateData.companyPhone !== undefined) dataToUpdate.companyPhone = updateData.companyPhone;
+    if (updateData.website !== undefined) dataToUpdate.website = updateData.website;
+    if (updateData.email !== undefined) dataToUpdate.email = updateData.email;
+    if (updateData.companyAddress !== undefined) dataToUpdate.companyAddress = updateData.companyAddress;
+    if (updateData.tin !== undefined) dataToUpdate.tin = updateData.tin;
 
-     if (Object.keys(dataToUpdate).length === 0) {
+    if (Object.keys(dataToUpdate).length === 0) {
         logger.info(`Tenant update skipped: No effective changes provided`, logContext);
         return existing;
-     }
+    }
 
-     try {
+    try {
         const updatedTenant = await prisma.tenant.update({ where: { id: tenantId }, data: dataToUpdate });
         logger.info(`Tenant updated successfully`, { ...logContext, changes: dataToUpdate });
         // TODO: Trigger side effects if status changed to SUSPENDED
         return updatedTenant;
-     } catch (error: any) {
+    } catch (error: any) {
         logContext.error = error;
         logger.error(`Error updating tenant`, logContext);
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') { throw new ApiError(httpStatus.CONFLICT, `Tenant name conflict during update.`); }
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') { throw new ApiError(httpStatus.NOT_FOUND, 'Tenant not found during update attempt.'); }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update tenant.');
-     }
+    }
 };
 
 /** Deactivate Tenant By ID (Super Admin - Soft Delete) */
@@ -319,10 +319,10 @@ const deactivateTenantById = async (tenantId: string, actionData?: TenantActionD
         status: TenantStatus.DEACTIVATED,
         deactivatedAt: new Date(),
     };
-     if (actionData?.notes) {
-         const currentConfig = (existing.configuration as Prisma.JsonObject) ?? {};
-         dataToUpdate.configuration = { ...currentConfig, _deactivationInfo: { reason: actionData.notes, timestamp: new Date().toISOString(), /* maybe add byUserId? */ } };
-     }
+    if (actionData?.notes) {
+        const currentConfig = (existing.configuration as Prisma.JsonObject) ?? {};
+        dataToUpdate.configuration = { ...currentConfig, _deactivationInfo: { reason: actionData.notes, timestamp: new Date().toISOString(), /* maybe add byUserId? */ } };
+    }
 
     try {
         // TODO: Consider transaction if deactivation side effects need atomicity
@@ -334,12 +334,12 @@ const deactivateTenantById = async (tenantId: string, actionData?: TenantActionD
         // 3. Potentially kick off background jobs for data archival/anonymization based on policy.
         return deactivatedTenant;
     } catch (error: any) {
-         logContext.error = error;
-         logger.error(`Error deactivating tenant`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             throw new ApiError(httpStatus.NOT_FOUND, 'Tenant not found during deactivation attempt.');
-         }
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to deactivate tenant.');
+        logContext.error = error;
+        logger.error(`Error deactivating tenant`, logContext);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            throw new ApiError(httpStatus.NOT_FOUND, 'Tenant not found during deactivation attempt.');
+        }
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to deactivate tenant.');
     }
 };
 
@@ -364,11 +364,45 @@ const updateOwnTenantConfig = async (tenantId: string, configData: UpdateTenantC
         newConfig.settings = { ...currentSettings, ...configData.settings }; // Overwrite/add keys in settings
     }
     // Add updates for other specific top-level keys defined in UpdateTenantConfigDto
+    if (configData.currency) {
+        newConfig.currency = configData.currency;
+    }
+
+    // Handle SMTP configuration
+    if (configData.smtp !== undefined) {
+        if (configData.smtp === null) {
+            // User explicitly disabled SMTP - remove it from config
+            delete newConfig.smtp;
+        } else {
+            // Merge SMTP config (don't overwrite password if not provided)
+            const currentSmtp = (currentConfig.smtp as Record<string, any>) ?? {};
+            const smtpData = configData.smtp as Record<string, any>;
+            const newSmtp: Record<string, any> = { ...currentSmtp, ...smtpData };
+
+            // Handle nested auth object
+            if (smtpData.auth) {
+                const currentAuth = (currentSmtp.auth as Record<string, any>) ?? {};
+                newSmtp.auth = { ...currentAuth, ...smtpData.auth };
+
+                // Only update password if provided (non-empty)
+                if (!smtpData.auth.pass) {
+                    newSmtp.auth.pass = currentAuth.pass || '';
+                }
+            }
+
+            newConfig.smtp = newSmtp as Prisma.JsonValue;
+        }
+    }
+
+    // Handle enabled notification channels
+    if (configData.enabledChannels !== undefined) {
+        newConfig.enabledChannels = configData.enabledChannels as Prisma.JsonValue;
+    }
 
     // Avoid DB call if config hasn't actually changed (simple stringify compare)
     if (JSON.stringify(newConfig) === JSON.stringify(currentConfig)) {
-         logger.info(`Tenant config update skipped: No effective changes`, logContext);
-         return existingTenant;
+        logger.info(`Tenant config update skipped: No effective changes`, logContext);
+        return existingTenant;
     }
 
     try {
@@ -393,92 +427,92 @@ const setTenantAdmins = async (tenantId: string, adminUserIds: string[]): Promis
 
     // --- Input Validation ---
     if (!adminUserIds || !Array.isArray(adminUserIds) || adminUserIds.length === 0 || adminUserIds.length > 2) {
-         logger.warn(`Set tenant admins failed: Invalid number of admin IDs provided (${adminUserIds?.length ?? 0}).`, logContext);
-         throw new ApiError(httpStatus.BAD_REQUEST, 'Must provide 1 or 2 user IDs to set as administrators.');
+        logger.warn(`Set tenant admins failed: Invalid number of admin IDs provided (${adminUserIds?.length ?? 0}).`, logContext);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Must provide 1 or 2 user IDs to set as administrators.');
     }
     // Ensure unique IDs provided
     if (new Set(adminUserIds).size !== adminUserIds.length) {
-         logger.warn(`Set tenant admins failed: Provided admin user IDs are not unique.`, logContext);
-         throw new ApiError(httpStatus.BAD_REQUEST, 'Provided admin user IDs must be unique.');
+        logger.warn(`Set tenant admins failed: Provided admin user IDs are not unique.`, logContext);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Provided admin user IDs must be unique.');
     }
     // Further ID format validation happens via DTO/controller ideally, but could add UUID check here if needed
 
     // --- Transactional Logic ---
     try {
-       const newAdminAssignments = await prisma.$transaction(async (tx) => {
-           // 1. Verify tenant exists
-           const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
-           if (!tenant) {
-               logger.warn(`Set tenant admins failed: Tenant not found`, logContext);
-               throw new ApiError(httpStatus.NOT_FOUND, 'Tenant not found.');
-           }
+        const newAdminAssignments = await prisma.$transaction(async (tx) => {
+            // 1. Verify tenant exists
+            const tenant = await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
+            if (!tenant) {
+                logger.warn(`Set tenant admins failed: Tenant not found`, logContext);
+                throw new ApiError(httpStatus.NOT_FOUND, 'Tenant not found.');
+            }
 
-           // 2. Verify the target users exist AND belong to THIS tenant
-           const targetUsers = await tx.user.findMany({
+            // 2. Verify the target users exist AND belong to THIS tenant
+            const targetUsers = await tx.user.findMany({
                 where: {
                     id: { in: adminUserIds },
                     tenantId: tenantId // CRITICAL: Ensure users belong to the target tenant
-                   },
+                },
                 select: { id: true }
-           });
-           if (targetUsers.length !== adminUserIds.length) {
+            });
+            if (targetUsers.length !== adminUserIds.length) {
                 const foundIds = targetUsers.map(u => u.id);
                 const notFoundOrWrongTenantIds = adminUserIds.filter(id => !foundIds.includes(id));
                 logContext.notFoundUserIds = notFoundOrWrongTenantIds;
                 logger.warn(`Set tenant admins failed: Users not found or not part of tenant ${tenantId}`, logContext);
                 throw new ApiError(httpStatus.BAD_REQUEST, `One or more specified users not found or do not belong to this tenant: ${notFoundOrWrongTenantIds.join(', ')}`);
-           }
+            }
 
-           // 3. Find the 'Admin' role ID specific to this tenant
-           const adminRole = await tx.role.findUnique({
+            // 3. Find the 'Admin' role ID specific to this tenant
+            const adminRole = await tx.role.findUnique({
                 where: { tenantId_name: { tenantId, name: TENANT_ADMIN_ROLE_NAME } }, // Use the unique constraint
                 select: { id: true }
-           });
-           if (!adminRole) {
+            });
+            if (!adminRole) {
                 // This indicates a setup problem for this tenant
                 logger.error(`Default "${TENANT_ADMIN_ROLE_NAME}" role not found for tenant ${tenantId}. Tenant setup might be incomplete.`, logContext);
                 throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, `Default admin role missing for this tenant. Cannot assign administrators.`);
-           }
-           logContext.adminRoleId = adminRole.id;
+            }
+            logContext.adminRoleId = adminRole.id;
 
-           // 4. Remove ALL existing Admin role assignments for users currently in THIS tenant
-           // This ensures we only have the *new* set of admins.
-           const deleteResult = await tx.userRole.deleteMany({
+            // 4. Remove ALL existing Admin role assignments for users currently in THIS tenant
+            // This ensures we only have the *new* set of admins.
+            const deleteResult = await tx.userRole.deleteMany({
                 where: {
                     roleId: adminRole.id,
                     // Ensure we only delete roles for users actually belonging to this tenant
                     // This is slightly redundant if roleId is tenant-scoped but adds robustness
                     user: { tenantId: tenantId }
                 }
-           });
-           logger.debug(`Removed ${deleteResult.count} existing admin role assignments for tenant ${tenantId}`, logContext);
+            });
+            logger.debug(`Removed ${deleteResult.count} existing admin role assignments for tenant ${tenantId}`, logContext);
 
-           // 5. Create new assignments for the specified users
-           const assignmentsToCreate = adminUserIds.map(userId => ({
+            // 5. Create new assignments for the specified users
+            const assignmentsToCreate = adminUserIds.map(userId => ({
                 userId: userId,
                 roleId: adminRole.id
-           }));
+            }));
 
-           if (assignmentsToCreate.length > 0) {
-               await tx.userRole.createMany({
-                   data: assignmentsToCreate,
-                   skipDuplicates: true // Should not happen after deleteMany, but safety measure
-               });
+            if (assignmentsToCreate.length > 0) {
+                await tx.userRole.createMany({
+                    data: assignmentsToCreate,
+                    skipDuplicates: true // Should not happen after deleteMany, but safety measure
+                });
                 logger.debug(`Created ${assignmentsToCreate.length} new admin role assignments`, logContext);
-           } else {
-               // This case should be caught by initial validation, but log if reached
-               logger.warn(`No admin assignments to create (adminUserIds array was empty?)`, logContext);
-           }
+            } else {
+                // This case should be caught by initial validation, but log if reached
+                logger.warn(`No admin assignments to create (adminUserIds array was empty?)`, logContext);
+            }
 
-           // 6. Fetch the created assignments to return confirmation (optional step)
-           const createdAssignments = await tx.userRole.findMany({
-               where: { roleId: adminRole.id, userId: { in: adminUserIds }}
-               // Optionally include user/role details if needed by caller
-               // include: { user: { select: { id: true, email: true }}, role: { select: { id: true, name: true }} }
-           });
+            // 6. Fetch the created assignments to return confirmation (optional step)
+            const createdAssignments = await tx.userRole.findMany({
+                where: { roleId: adminRole.id, userId: { in: adminUserIds } }
+                // Optionally include user/role details if needed by caller
+                // include: { user: { select: { id: true, email: true }}, role: { select: { id: true, name: true }} }
+            });
 
-           return createdAssignments; // Return the array of UserRole records created
-       });
+            return createdAssignments; // Return the array of UserRole records created
+        });
 
         logger.info(`Successfully set administrators for tenant ${tenantId} to users: ${adminUserIds.join(', ')}`, logContext);
         return newAdminAssignments; // Return the result of the transaction
@@ -494,9 +528,9 @@ const setTenantAdmins = async (tenantId: string, adminUserIds: string[]): Promis
 
         // Handle potential Prisma unique constraint errors (e.g., on UserRole if deleteMany failed somehow)
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             logContext.error = error;
-             logger.error(`Error setting tenant administrators: Unique constraint violation`, logContext);
-             throw new ApiError(httpStatus.CONFLICT, 'Failed to set administrators due to a data conflict. Please try again.');
+            logContext.error = error;
+            logger.error(`Error setting tenant administrators: Unique constraint violation`, logContext);
+            throw new ApiError(httpStatus.CONFLICT, 'Failed to set administrators due to a data conflict. Please try again.');
         }
 
         // Handle other unexpected errors

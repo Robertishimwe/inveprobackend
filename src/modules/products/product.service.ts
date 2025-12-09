@@ -385,11 +385,16 @@ const updateProductById = async (
         }
     }
 
-    let categoryUpdateOperation: Prisma.ProductCategoryUpdateManyWithoutProductNestedInput | undefined = undefined;
+    // Handle category updates using transaction with deleteMany + createMany
+    // (Prisma's 'set' operation doesn't work well with composite primary keys on explicit join tables)
+    let categoryUpdateRequired = false;
+    let newCategoryIds: string[] = [];
+
     if (updateData.categoryIds !== undefined) { // Check if categoryIds array was provided
+        categoryUpdateRequired = true;
         if (updateData.categoryIds === null || updateData.categoryIds.length === 0) {
             // Remove all category associations
-            categoryUpdateOperation = { set: [] };
+            newCategoryIds = [];
             logContext.categoriesSet = [];
         } else {
             // Validate the provided category IDs belong to the tenant
@@ -401,42 +406,65 @@ const updateProductById = async (
                 const invalidIds = updateData.categoryIds.filter(id => !validCategories.some(vc => vc.id === id));
                 throw new ApiError(httpStatus.BAD_REQUEST, `Invalid or non-existent category IDs provided: ${invalidIds.join(', ')}`);
             }
-            // Prepare the 'set' operation to link product only to these categories
-            categoryUpdateOperation = {
-                set: updateData.categoryIds.map(catId => ({ productId_categoryId: { productId, categoryId: catId } }))
-                // Note: For 'set' with composite keys, you provide the unique identifier object.
-                // If you only want to connect without deleting others, use 'connect'.
-                // If you want to add without deleting others, use 'connectOrCreate' or 'create'.
-                // 'set' is appropriate for replacing the entire list.
-            };
+            newCategoryIds = updateData.categoryIds;
             logContext.categoriesSet = updateData.categoryIds;
         }
-        // Assign the operation to the data object
-        dataToUpdate.categories = categoryUpdateOperation;
     }
     // ---------------------------------------------------------
 
-    // Check if there's actually anything to update
-    if (Object.keys(dataToUpdate).length === 0) {
+    // Check if there's actually anything to update (product fields OR categories)
+    if (Object.keys(dataToUpdate).length === 0 && !categoryUpdateRequired) {
         logger.info(`Product update skipped: No valid data provided`, logContext);
         const currentProduct = await getProductById(productId, tenantId);
         if (!currentProduct) throw new ApiError(httpStatus.NOT_FOUND, 'Product not found.');
         return currentProduct;
     }
 
-    // 3. Perform the update
+    // 3. Perform the update using a transaction to handle product + categories
     try {
-        const updatedProduct = await prisma.product.update({
-            where: { id: productId },
-            data: dataToUpdate, // This now includes the 'categories: { set: [...] }' operation if provided
-            include: { // Include categories in the response
-                categories: { select: { category: { select: { id: true, name: true } } } }
+        const updatedProduct = await prisma.$transaction(async (tx) => {
+            // Update product fields if there are any
+            if (Object.keys(dataToUpdate).length > 0) {
+                await tx.product.update({
+                    where: { id: productId },
+                    data: dataToUpdate,
+                });
             }
+
+            // Handle category updates with deleteMany + createMany
+            if (categoryUpdateRequired) {
+                // First, remove all existing category associations for this product
+                await tx.productCategory.deleteMany({
+                    where: { productId: productId }
+                });
+
+                // Then, create new associations if there are any categories to add
+                if (newCategoryIds.length > 0) {
+                    await tx.productCategory.createMany({
+                        data: newCategoryIds.map(catId => ({
+                            productId: productId,
+                            categoryId: catId
+                        }))
+                    });
+                }
+            }
+
+            // Fetch the updated product with categories included
+            return await tx.product.findUnique({
+                where: { id: productId },
+                include: {
+                    categories: { select: { category: { select: { id: true, name: true } } } }
+                }
+            });
         });
+
+        if (!updatedProduct) {
+            throw new ApiError(httpStatus.NOT_FOUND, 'Product not found after update.');
+        }
 
         logger.info(`Product updated successfully`, logContext);
         await invalidateProductCache(tenantId, productId, updatedProduct.sku);
-        return updatedProduct as SafeProduct; // Cast should be safe
+        return updatedProduct as SafeProduct;
 
     } catch (error: any) {
         logContext.error = error;

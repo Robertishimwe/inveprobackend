@@ -116,6 +116,16 @@ selfTenantRouter.patch(
     tenantController.updateOwnTenantConfig    // Handle request
 );
 
+/**
+ * POST /api/v1/tenants/self/test-email
+ * Sends a test email to verify SMTP configuration.
+ */
+selfTenantRouter.post(
+    '/test-email',
+    checkPermissions(['tenant:config:update']), // Only allow if user can update config
+    tenantController.sendTestEmail            // Handle request
+);
+
 // Mount the self-tenant configuration sub-router under the main tenants path
 router.use('/self', selfTenantRouter);
 

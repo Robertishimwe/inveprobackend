@@ -18,6 +18,7 @@ import { OrderWithDetails } from '@/modules/orders/order.service';
 import { purchaseOrderService } from '../purchase-order/purchase-order.service';
 import { orderService } from '@/modules/orders/order.service';
 import { productService } from '@/modules/products/product.service';
+import { checkAndNotifyLowStockBatch } from '@/modules/inventory/low-stock-check.helper';
 // import { inventoryService } from '@/modules/inventory/inventory.service';
 
 
@@ -1134,6 +1135,14 @@ const processPosCheckout = async (
             // CRITICAL: Invalidate Redis product cache so API returns fresh data
             await productService.invalidateProductCache(tenantId, item.productId);
         }
+
+        // Check for low stock after sales and send notifications if needed
+        const itemsToCheck = checkoutData.items.map(item => ({
+            productId: item.productId,
+            locationId: locationId
+        }));
+        checkAndNotifyLowStockBatch(tenantId, itemsToCheck)
+            .catch(err => logger.error('Error checking low stock after POS checkout', { error: err.message }));
 
         return createdOrder as OrderWithDetails; // Cast transaction result
 

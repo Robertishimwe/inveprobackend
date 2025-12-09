@@ -8,7 +8,45 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 // import { CreateRoleDto, UpdateRoleDto } from './dto'; // UpdateRoleDto should not have permissionIds now
 
 // Define log context type if not global
-type LogContext = { function?: string; tenantId?: string | null; roleId?: string | null; permissionId?: string | null; data?: any; error?: any; [key: string]: any; };
+type LogContext = { function?: string; tenantId?: string | null; roleId?: string | null; permissionId?: string | null; data?: any; error?: any;[key: string]: any; };
+
+// Super Admin only permissions - these can ONLY be assigned by system/seeding, never through API
+const SUPER_ADMIN_ONLY_PERMISSION_KEYS = [
+    'tenant:create:any',
+    'tenant:read:any',
+    'tenant:update:any',
+    'tenant:delete:any',
+    'tenant:manage:admins',
+    'user:create:any',
+    'system:config:read',
+    'system:config:update',
+];
+
+/**
+ * Validates that none of the provided permission IDs are super-admin-only permissions.
+ * Throws an error if any super admin permissions are found.
+ */
+const validateNoSuperAdminPermissions = async (permissionIds: string[]): Promise<void> => {
+    if (!permissionIds || permissionIds.length === 0) return;
+
+    // Find if any of the requested permissions are super admin only
+    const superAdminPerms = await prisma.permission.findMany({
+        where: {
+            id: { in: permissionIds },
+            permissionKey: { in: SUPER_ADMIN_ONLY_PERMISSION_KEYS }
+        },
+        select: { permissionKey: true }
+    });
+
+    if (superAdminPerms.length > 0) {
+        const blockedKeys = superAdminPerms.map(p => p.permissionKey).join(', ');
+        logger.warn(`Attempted to assign super admin permissions: ${blockedKeys}`);
+        throw new ApiError(
+            httpStatus.FORBIDDEN,
+            `Cannot assign super admin permissions: ${blockedKeys}. These permissions are reserved for system administrators only.`
+        );
+    }
+};
 
 // Type for Role with Permissions included (ensure Permission type is available)
 export type RoleWithPermissions = Role & {
@@ -42,12 +80,15 @@ const createRole = async (data: CreateRoleDto, tenantId: string): Promise<RoleWi
             select: { id: true } // Select only ID
         });
         if (validPerms.length !== data.permissionIds.length) {
-             const invalidIds = data.permissionIds.filter(reqId => !validPerms.some(vp => vp.id === reqId));
-             logContext.invalidPermissionIds = invalidIds;
-             logger.warn(`Role creation failed: Invalid permission IDs provided: ${invalidIds.join(', ')}`, logContext);
-             throw new ApiError(httpStatus.BAD_REQUEST, `One or more provided permission IDs are invalid: ${invalidIds.join(', ')}`);
+            const invalidIds = data.permissionIds.filter(reqId => !validPerms.some(vp => vp.id === reqId));
+            logContext.invalidPermissionIds = invalidIds;
+            logger.warn(`Role creation failed: Invalid permission IDs provided: ${invalidIds.join(', ')}`, logContext);
+            throw new ApiError(httpStatus.BAD_REQUEST, `One or more provided permission IDs are invalid: ${invalidIds.join(', ')}`);
         }
         validPermissionIds = validPerms.map(p => p.id); // Use the validated IDs
+
+        // SECURITY: Block super admin permissions from being assigned via API
+        await validateNoSuperAdminPermissions(validPermissionIds);
     }
 
     // 3. Create Role and connect initial permissions
@@ -66,7 +107,7 @@ const createRole = async (data: CreateRoleDto, tenantId: string): Promise<RoleWi
                 } : undefined, // Connect only if valid permissionIds were provided
             },
             include: { // Include permissions in the response, sorted
-                 permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' }}}
+                permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' } } }
             }
         });
         logContext.roleId = newRole.id;
@@ -77,9 +118,9 @@ const createRole = async (data: CreateRoleDto, tenantId: string): Promise<RoleWi
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error creating role`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             throw new ApiError(httpStatus.CONFLICT, `Role name conflict during creation.`);
-         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            throw new ApiError(httpStatus.CONFLICT, `Role name conflict during creation.`);
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to create role.');
     }
 };
@@ -98,7 +139,7 @@ const queryRoles = async (filter: Prisma.RoleWhereInput, orderBy: Prisma.RoleOrd
             prisma.role.findMany({
                 where: filter,
                 // Include permissions, sorted for consistency
-                include: { permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' }}} },
+                include: { permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' } } } },
                 orderBy, skip, take: limit
             }),
             prisma.role.count({ where: filter }),
@@ -106,9 +147,9 @@ const queryRoles = async (filter: Prisma.RoleWhereInput, orderBy: Prisma.RoleOrd
         logger.debug(`Role query successful, found ${roles.length} of ${totalResults}`, logContext);
         return { roles: roles as RoleWithPermissions[], totalResults };
     } catch (error: any) {
-         logContext.error = error;
-         logger.error(`Error querying roles`, logContext);
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve roles.');
+        logContext.error = error;
+        logger.error(`Error querying roles`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve roles.');
     }
 };
 
@@ -131,9 +172,9 @@ const queryRolesWithOutLinkedData = async (filter: Prisma.RoleWhereInput, orderB
         logger.debug(`Role query successful, found ${roles.length} of ${totalResults}`, logContext);
         return { roles: roles as RoleWithPermissions[], totalResults };
     } catch (error: any) {
-         logContext.error = error;
-         logger.error(`Error querying roles`, logContext);
-         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve roles.');
+        logContext.error = error;
+        logger.error(`Error querying roles`, logContext);
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve roles.');
     }
 };
 
@@ -146,7 +187,7 @@ const getRoleById = async (roleId: string, tenantId: string): Promise<RoleWithPe
         const role = await prisma.role.findFirst({
             where: { id: roleId, tenantId },
             // Include permissions, sorted for consistency
-            include: { permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' }} }}
+            include: { permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' } } } }
         });
         if (!role) { logger.warn(`Role not found or tenant mismatch`, logContext); return null; }
         logger.debug(`Role found successfully`, logContext);
@@ -167,10 +208,10 @@ const getRoleById = async (roleId: string, tenantId: string): Promise<RoleWithPe
  * @returns {Promise<RoleWithPermissions>} The updated role object including its current permissions.
  */
 const updateRoleById = async (roleId: string, updateData: UpdateRoleDto, tenantId: string): Promise<RoleWithPermissions> => {
-     const logContext: LogContext = { function: 'updateRoleById', roleId, tenantId, data: updateData };
+    const logContext: LogContext = { function: 'updateRoleById', roleId, tenantId, data: updateData };
 
     // 1. Fetch existing role, ensure it exists and is not a system role
-    const existing = await prisma.role.findFirst({ where: { id: roleId, tenantId }}); // Fetch full role for return if no update happens
+    const existing = await prisma.role.findFirst({ where: { id: roleId, tenantId } }); // Fetch full role for return if no update happens
     if (!existing) {
         logger.warn(`Update failed: Role not found`, logContext);
         throw new ApiError(httpStatus.NOT_FOUND, 'Role not found.');
@@ -196,12 +237,12 @@ const updateRoleById = async (roleId: string, updateData: UpdateRoleDto, tenantI
 
     // 4. Check if anything needs updating
     if (Object.keys(dataToUpdate).length === 0) {
-         logger.info(`Role update skipped: No name/description changes provided`, logContext);
-         // Re-fetch with permissions for consistent return type
-         return getRoleById(roleId, tenantId).then(role => {
-             if (!role) throw new ApiError(httpStatus.NOT_FOUND, 'Role disappeared unexpectedly.');
-             return role;
-         });
+        logger.info(`Role update skipped: No name/description changes provided`, logContext);
+        // Re-fetch with permissions for consistent return type
+        return getRoleById(roleId, tenantId).then(role => {
+            if (!role) throw new ApiError(httpStatus.NOT_FOUND, 'Role disappeared unexpectedly.');
+            return role;
+        });
     }
 
     // 5. Perform Update (only name/description)
@@ -209,7 +250,7 @@ const updateRoleById = async (roleId: string, updateData: UpdateRoleDto, tenantI
         const updatedRole = await prisma.role.update({
             where: { id: roleId }, // Tenant verified by initial fetch
             data: dataToUpdate,
-            include: { permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' }}} } // Include permissions for response
+            include: { permissions: { include: { permission: true }, orderBy: { permission: { permissionKey: 'asc' } } } } // Include permissions for response
         });
         logger.info(`Role basic info updated successfully`, logContext);
         // Invalidate role cache if implemented
@@ -217,12 +258,12 @@ const updateRoleById = async (roleId: string, updateData: UpdateRoleDto, tenantI
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error updating role`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             throw new ApiError(httpStatus.CONFLICT, `Role name conflict during update.`);
-         }
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             throw new ApiError(httpStatus.NOT_FOUND, 'Role not found during update attempt.');
-         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            throw new ApiError(httpStatus.CONFLICT, `Role name conflict during update.`);
+        }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            throw new ApiError(httpStatus.NOT_FOUND, 'Role not found during update attempt.');
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update role.');
     }
 };
@@ -241,13 +282,16 @@ const assignPermissionToRole = async (roleId: string, permissionId: string, tena
     try {
         await prisma.$transaction(async (tx) => {
             // 1. Verify role exists, belongs to tenant, and is not system role
-            const role = await tx.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true }});
+            const role = await tx.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true } });
             if (!role) throw new ApiError(httpStatus.NOT_FOUND, 'Role not found.');
             if (role.isSystemRole) throw new ApiError(httpStatus.FORBIDDEN, 'Cannot assign permissions to system roles.');
 
             // 2. Verify permission exists (globally)
             const permissionExists = await tx.permission.count({ where: { id: permissionId } });
             if (!permissionExists) throw new ApiError(httpStatus.NOT_FOUND, 'Permission not found.');
+
+            // SECURITY: Block super admin permissions from being assigned via API
+            await validateNoSuperAdminPermissions([permissionId]);
 
             // 3. Create the assignment (upsert handles existing gracefully)
             await tx.rolePermission.upsert({
@@ -257,7 +301,7 @@ const assignPermissionToRole = async (roleId: string, permissionId: string, tena
             });
         });
         logger.info(`Permission ${permissionId} assigned successfully to role ${roleId}`, logContext);
-         // Invalidate role cache if implemented
+        // Invalidate role cache if implemented
     } catch (error: any) {
         if (error instanceof ApiError) throw error; // Re-throw known validation errors
         logContext.error = error;
@@ -279,10 +323,10 @@ const removePermissionFromRole = async (roleId: string, permissionId: string, te
     const logContext: LogContext = { function: 'removePermissionFromRole', roleId, permissionId, tenantId };
 
     // Optional: Verify role exists and isn't system role first
-     const role = await prisma.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true } });
-     if (!role) { throw new ApiError(httpStatus.NOT_FOUND, 'Role not found.'); }
-     if (role.isSystemRole) { throw new ApiError(httpStatus.FORBIDDEN, 'Cannot remove permissions from system roles.'); }
-     // Permission existence check isn't strictly necessary for deleteMany
+    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true } });
+    if (!role) { throw new ApiError(httpStatus.NOT_FOUND, 'Role not found.'); }
+    if (role.isSystemRole) { throw new ApiError(httpStatus.FORBIDDEN, 'Cannot remove permissions from system roles.'); }
+    // Permission existence check isn't strictly necessary for deleteMany
 
     try {
         // Delete the specific assignment if it exists
@@ -312,7 +356,7 @@ const deleteRoleById = async (roleId: string, tenantId: string): Promise<void> =
     const logContext: LogContext = { function: 'deleteRoleById', roleId, tenantId };
 
     // 1. Verify role exists, is not system role
-    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true }});
+    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true } });
     if (!role) { throw new ApiError(httpStatus.NOT_FOUND, 'Role not found.'); }
     if (role.isSystemRole) { throw new ApiError(httpStatus.FORBIDDEN, 'Cannot delete system roles.'); }
 
@@ -332,14 +376,14 @@ const deleteRoleById = async (roleId: string, tenantId: string): Promise<void> =
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error deleting role`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             throw new ApiError(httpStatus.NOT_FOUND, 'Role not found during delete attempt.');
-         }
-         // Catch foreign key constraints if dependency checks missed something (shouldn't happen for UserRole if check passed)
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
-             logger.warn(`Delete failed: Foreign key constraint violation (unexpected)`, logContext);
-             throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot delete role due to unexpected existing references.');
-         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            throw new ApiError(httpStatus.NOT_FOUND, 'Role not found during delete attempt.');
+        }
+        // Catch foreign key constraints if dependency checks missed something (shouldn't happen for UserRole if check passed)
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+            logger.warn(`Delete failed: Foreign key constraint violation (unexpected)`, logContext);
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot delete role due to unexpected existing references.');
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to delete role.');
     }
 };
@@ -369,7 +413,7 @@ const addPermissionsToRole = async (roleId: string, permissionIds: string[], ten
     try {
         await prisma.$transaction(async (tx) => {
             // 1. Verify role exists, belongs to tenant, and is not system role
-            const role = await tx.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true }});
+            const role = await tx.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true } });
             if (!role) throw new ApiError(httpStatus.NOT_FOUND, 'Role not found.');
             if (role.isSystemRole) throw new ApiError(httpStatus.FORBIDDEN, 'Cannot assign permissions to system roles.');
 
@@ -383,10 +427,13 @@ const addPermissionsToRole = async (roleId: string, permissionIds: string[], ten
                 throw new ApiError(httpStatus.BAD_REQUEST, `Invalid permission ID(s) provided: ${invalidIds.join(', ')}`);
             }
 
+            // SECURITY: Block super admin permissions from being assigned via API
+            await validateNoSuperAdminPermissions(permissionIds);
+
             // 3. Find permissions already assigned to this role to avoid conflicts/redundancy
             const existingAssignments = await tx.rolePermission.findMany({
-                 where: { roleId: roleId, permissionId: { in: permissionIds } },
-                 select: { permissionId: true }
+                where: { roleId: roleId, permissionId: { in: permissionIds } },
+                select: { permissionId: true }
             });
             const existingPermissionIds = new Set(existingAssignments.map(p => p.permissionId));
 
@@ -400,9 +447,9 @@ const addPermissionsToRole = async (roleId: string, permissionIds: string[], ten
                 await tx.rolePermission.createMany({
                     data: permissionsToCreate
                 });
-                 logger.info(`Assigned ${permissionsToCreate.length} new permissions to role ${roleId}`, logContext);
+                logger.info(`Assigned ${permissionsToCreate.length} new permissions to role ${roleId}`, logContext);
             } else {
-                 logger.info(`No new permissions to assign to role ${roleId} (all provided permissions already assigned)`, logContext);
+                logger.info(`No new permissions to assign to role ${roleId} (all provided permissions already assigned)`, logContext);
             }
         });
     } catch (error: any) {
@@ -422,17 +469,17 @@ const addPermissionsToRole = async (roleId: string, permissionIds: string[], ten
  * @returns {Promise<void>}
  */
 const removePermissionsFromRole = async (roleId: string, permissionIds: string[], tenantId: string): Promise<void> => {
-     const logContext: LogContext = { function: 'removePermissionsFromRole', roleId, permissionIds, tenantId };
+    const logContext: LogContext = { function: 'removePermissionsFromRole', roleId, permissionIds, tenantId };
 
-     if (!permissionIds || permissionIds.length === 0) {
+    if (!permissionIds || permissionIds.length === 0) {
         logger.info(`No permission IDs provided to remove from role ${roleId}`, logContext);
         return; // Nothing to do
     }
 
-     // Optional: Verify role exists and isn't system role first
-     const role = await prisma.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true } });
-     if (!role) { throw new ApiError(httpStatus.NOT_FOUND, 'Role not found.'); }
-     if (role.isSystemRole) { throw new ApiError(httpStatus.FORBIDDEN, 'Cannot remove permissions from system roles.'); }
+    // Optional: Verify role exists and isn't system role first
+    const role = await prisma.role.findFirst({ where: { id: roleId, tenantId }, select: { id: true, isSystemRole: true } });
+    if (!role) { throw new ApiError(httpStatus.NOT_FOUND, 'Role not found.'); }
+    if (role.isSystemRole) { throw new ApiError(httpStatus.FORBIDDEN, 'Cannot remove permissions from system roles.'); }
 
     try {
         // Delete assignments matching the role ID and any of the provided permission IDs

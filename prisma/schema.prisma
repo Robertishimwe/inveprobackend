@@ -215,6 +215,8 @@ model Tenant {
   returns               Return[]
   stockCounts           StockCount[] 
   posAuditLogs          PosAuditLog[] 
+  notifications         Notification[]
+  notificationPreferences NotificationPreference[]
 
   @@index([status])
   @@map("tenants")
@@ -303,6 +305,8 @@ model User {
   countedStockCountItems StockCountItem[]      @relation("CountedStockCountItems")
   locations              UserLocation[]        // Locations assigned to this user
   posAuditLogs           PosAuditLog[]         @relation("PosAuditLogs")
+  notifications          Notification[]
+  notificationPreferences NotificationPreference[]
 
   @@index([tenantId]) // Index nullable FK
   @@index([email])
@@ -526,6 +530,7 @@ model Location {
   stockCounts          StockCount[]
   users                UserLocation[]         // Users assigned to this location
   posAuditLogs         PosAuditLog[]
+  notifications        Notification[]
 
   @@unique([tenantId, name]) // Location name unique per tenant
   @@index([tenantId])
@@ -1251,4 +1256,88 @@ model PosAuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("pos_audit_logs")
+}
+
+// ======================================================================
+// == Notification System ==
+// ======================================================================
+
+enum AlertType {
+  LOW_STOCK           // Inventory below reorder point
+  STOCK_OUT           // Inventory at zero
+  EXPIRY_WARNING      // Items approaching expiry date
+  PO_RECEIVED         // Purchase order received
+  PO_APPROVED         // Purchase order approved
+  ORDER_PLACED        // New order placed
+  RETURN_REQUESTED    // Customer return requested
+  SYSTEM_ALERT        // General system alerts
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model Notification {
+  id          String               @id @default(uuid())
+  tenantId    String               @map("tenant_id")
+  userId      String?              @map("user_id")       // Null = broadcast to all tenant users
+  locationId  String?              @map("location_id")   // Optional location context
+  
+  type        AlertType
+  priority    NotificationPriority @default(NORMAL)
+  title       String
+  message     String
+  data        Json?                @default("{}")        // Additional structured data (productId, etc.)
+  
+  isRead      Boolean              @default(false) @map("is_read")
+  readAt      DateTime?            @map("read_at")
+  
+  // For deduplication - prevent sending same alert repeatedly
+  dedupeKey   String?              @map("dedupe_key")    // e.g., "low_stock:productId:locationId"
+  
+  createdAt   DateTime             @default(now()) @map("created_at")
+  expiresAt   DateTime?            @map("expires_at")    // Optional expiration
+
+  // Relations
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location    Location?            @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([tenantId, userId, isRead])
+  @@index([dedupeKey])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id                String              @id @default(uuid())
+  tenantId          String              @map("tenant_id")
+  userId            String              @map("user_id")
+  
+  channel           NotificationChannel
+  alertType         AlertType           @map("alert_type")
+  enabled           Boolean             @default(true)
+  
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, alertType])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("notification_preferences")
 }

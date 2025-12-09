@@ -20,6 +20,7 @@ import logger from "@/utils/logger";
 import { CreateAdjustmentDto } from "./dto/create-adjustment.dto";
 import { CreateTransferDto } from "./dto/create-transfer.dto";
 import { ReceiveTransferDto } from "./dto/receive-transfer.dto";
+import { checkAndNotifyLowStockBatch } from "./low-stock-check.helper";
 // import pick from "@/utils/pick"; // Import pick utility if needed for filtering options later
 
 // Define log context type if not already defined globally
@@ -293,6 +294,13 @@ const createAdjustment = async (
     );
 
     logger.info(`Inventory adjustment created successfully`, logContext);
+
+    // Check for low stock after adjustment (non-blocking)
+    const itemsToCheck = data.items.map(item => ({ productId: item.productId, locationId: data.locationId }));
+    checkAndNotifyLowStockBatch(tenantId, itemsToCheck).catch(err => {
+      logger.error('Low stock check failed after adjustment', { ...logContext, error: err.message });
+    });
+
     return { adjustmentId: adjustment.id, transactionIds: transactionIds.map(id => id.toString()) };
   } catch (error: any) {
     if (error instanceof ApiError) throw error; // Re-throw known validation/logic errors
@@ -501,6 +509,20 @@ const shipTransfer = async (
       `Inventory transfer ${result.transferId} shipped successfully`,
       logContext
     );
+
+    // Check for low stock at source location after shipping (non-blocking)
+    prisma.inventoryTransfer.findUnique({
+      where: { id: result.transferId },
+      include: { items: { select: { productId: true } } }
+    }).then(transfer => {
+      if (transfer) {
+        const itemsToCheck = transfer.items.map(item => ({ productId: item.productId, locationId: transfer.sourceLocationId }));
+        checkAndNotifyLowStockBatch(tenantId, itemsToCheck).catch(err => {
+          logger.error('Low stock check failed after shipTransfer', { ...logContext, error: err.message });
+        });
+      }
+    }).catch(() => { });
+
     return { success: true };
   } catch (error: any) {
     if (error instanceof ApiError) throw error;
@@ -1075,6 +1097,14 @@ const updateInventoryItem = async (
     });
 
     logger.info(`Inventory item updated successfully`, logContext);
+
+    // If reorder point was updated, check if current stock is below it and notify
+    if (data.reorderPoint !== undefined && data.reorderPoint !== null && data.reorderPoint > 0) {
+      // Fire and forget - check low stock in the background
+      checkAndNotifyLowStockBatch(tenantId, [{ productId: existing.productId, locationId: existing.locationId }])
+        .catch(err => logger.error('Error checking low stock after reorder update', { error: err.message }));
+    }
+
     return updated;
   } catch (error: any) {
     if (error instanceof ApiError) throw error;
