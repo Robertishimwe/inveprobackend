@@ -32,6 +32,7 @@ import stockCountRoutes from '@/modules/stock-counts/stock-count.routes';
 import reportRoutes from '@/modules/reports/reports.routes';
 import sseRoutes from '@/routes/sse.routes';
 import notificationRoutes from '@/modules/notifications/notification.routes';
+import uploadRoutes from '@/modules/upload/upload.routes';
 // Add imports for any other modules (e.g., reporting)
 
 const app: Express = express();
@@ -39,7 +40,10 @@ const app: Express = express();
 // --- Security Middleware ---
 // Set various HTTP headers for security
 app.set('trust proxy', 1);
-app.use(helmet());
+app.set('trust proxy', 1);
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 // Enable CORS (Cross-Origin Resource Sharing)
 // Configure origins specifically for production environments
@@ -58,6 +62,9 @@ app.use(express.json({ limit: '20kb' }));
 
 // Parse URL-encoded request bodies (with size limit)
 app.use(express.urlencoded({ extended: true, limit: '20kb' }));
+
+// Serve static files from 'uploads' directory
+app.use('/uploads', express.static('uploads'));
 
 // --- Logging Middleware ---
 // Use Morgan for HTTP request logging. Log format depends on environment.
@@ -106,6 +113,7 @@ apiRouter.use('/stock-counts', stockCountRoutes);
 apiRouter.use('/reports', reportRoutes);
 apiRouter.use('/sse', sseRoutes); // Real-time SSE for stock updates
 apiRouter.use('/notifications', notificationRoutes); // Notification management
+apiRouter.use('/upload', uploadRoutes);
 
 app.use('/api/v1', apiRouter);
 

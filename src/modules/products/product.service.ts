@@ -149,7 +149,9 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
             taxable: productData.taxable,
             weight: productData.weight,
             weightUnit: productData.weightUnit,
+
             dimensions: dimensionsJson,
+            imageUrl: productData.imageUrl,
             categories: categoryConnectOrCreate,
             customAttributes: parsedCustomAttributes ?? Prisma.JsonNull, // Use JsonNull if undefined after parsing attempt
             tenant: { connect: { id: tenantId } }

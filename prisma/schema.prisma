@@ -425,6 +425,7 @@ model Product {
   weightUnit           String?     @map("weight_unit") // e.g., kg, lb
   dimensions           Json?       // e.g., { "length": 10, "width": 5, "height": 2, "unit": "cm" }
   customAttributes     Json?       @default("{}") @map("custom_attributes")
+  imageUrl             String?     @map("image_url") // Added for product image
   createdAt            DateTime    @default(now()) @map("created_at")
   updatedAt            DateTime    @updatedAt @map("updated_at")
 
