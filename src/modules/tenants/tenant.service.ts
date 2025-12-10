@@ -399,6 +399,23 @@ const updateOwnTenantConfig = async (tenantId: string, configData: UpdateTenantC
         newConfig.enabledChannels = configData.enabledChannels as Prisma.JsonValue;
     }
 
+    // Handle alert settings (per-alert-type notification recipient configuration)
+    if (configData.alertSettings !== undefined) {
+        const currentAlertSettings = (currentConfig.alertSettings as Record<string, any>) ?? {};
+        const incomingAlertSettings = configData.alertSettings as Record<string, any>;
+
+        // Deep merge alert settings per alert type
+        const mergedAlertSettings: Record<string, any> = { ...currentAlertSettings };
+        for (const alertType of Object.keys(incomingAlertSettings)) {
+            mergedAlertSettings[alertType] = {
+                ...(currentAlertSettings[alertType] || {}),
+                ...incomingAlertSettings[alertType],
+            };
+        }
+
+        newConfig.alertSettings = mergedAlertSettings as Prisma.JsonValue;
+    }
+
     // Avoid DB call if config hasn't actually changed (simple stringify compare)
     if (JSON.stringify(newConfig) === JSON.stringify(currentConfig)) {
         logger.info(`Tenant config update skipped: No effective changes`, logContext);

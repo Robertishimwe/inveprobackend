@@ -1,6 +1,6 @@
 // src/modules/tenants/dto/update-tenant-config.dto.ts
 // DTO for Tenant Admins to update *their own* configuration subset
-import { IsBoolean, IsEmail, IsNumber, IsObject, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsEmail, IsNumber, IsObject, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 // SMTP Auth credentials
@@ -43,6 +43,35 @@ class SmtpConfigDto {
     fromName?: string;
 }
 
+// Channel settings for a specific alert type (in-app or email)
+class AlertChannelSettingsDto {
+    @IsBoolean()
+    @IsOptional()
+    enabled?: boolean;
+
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    roles?: string[]; // Role names that should receive this alert (empty = ALL roles)
+
+    @IsBoolean()
+    @IsOptional()
+    locationFiltering?: boolean; // If true, filter by user's assigned locations (except Admin)
+}
+
+// Settings for a specific alert type (e.g., LOW_STOCK, STOCK_OUT)
+class AlertTypeSettingsDto {
+    @ValidateNested()
+    @Type(() => AlertChannelSettingsDto)
+    @IsOptional()
+    inApp?: AlertChannelSettingsDto;
+
+    @ValidateNested()
+    @Type(() => AlertChannelSettingsDto)
+    @IsOptional()
+    email?: AlertChannelSettingsDto;
+}
+
 // This DTO should be more specific based on ALLOWED config keys a tenant admin can change.
 export class UpdateTenantConfigDto {
     // Example: Allow updating a specific 'settings' key within the main JSONB config
@@ -63,4 +92,16 @@ export class UpdateTenantConfigDto {
     // Enabled notification channels (e.g., ['EMAIL', 'SMS'])
     @IsOptional()
     enabledChannels?: string[];
+
+    // Alert settings - per alert type configuration for notification recipients
+    @IsObject()
+    @IsOptional()
+    alertSettings?: {
+        LOW_STOCK?: AlertTypeSettingsDto;
+        STOCK_OUT?: AlertTypeSettingsDto;
+        EXPIRING_STOCK?: AlertTypeSettingsDto;
+        SYSTEM_ALERT?: AlertTypeSettingsDto;
+        [key: string]: AlertTypeSettingsDto | undefined;
+    };
 }
+

@@ -2,9 +2,10 @@
  * Email Notification Channel
  * 
  * Sends notifications via email using tenant's SMTP configuration.
+ * Now with role-based and location-based recipient filtering.
  */
 
-import { NotificationChannel } from '@prisma/client';
+import { NotificationChannel, AlertType } from '@prisma/client';
 import { prisma } from '@/config';
 import logger from '@/utils/logger';
 import {
@@ -13,17 +14,18 @@ import {
     NotificationResult,
 } from '../notification.types';
 import emailService from '../email.service';
+import { getEligibleRecipients } from '../notification-recipients.helper';
 
 export class EmailChannel implements INotificationChannel {
     readonly channel = NotificationChannel.EMAIL;
 
     async send(payload: NotificationPayload): Promise<NotificationResult> {
         try {
-            // Get recipient(s)
+            // Get recipient(s) based on alert settings
             let recipients: string[] = [];
 
             if (payload.userId) {
-                // Get specific user's email
+                // If specific user is targeted, get their email
                 const user = await prisma.user.findUnique({
                     where: { id: payload.userId },
                     select: { email: true },
@@ -32,23 +34,25 @@ export class EmailChannel implements INotificationChannel {
                     recipients.push(user.email);
                 }
             } else {
-                // Broadcast to all users in tenant with email preference enabled
-                const users = await prisma.user.findMany({
-                    where: {
-                        tenantId: payload.tenantId,
-                        isActive: true,
-                    },
-                    select: { email: true },
-                });
-                recipients = users.map((u: { email: string }) => u.email);
+                // Use recipient helper to get eligible users based on alert settings
+                const eligibleRecipients = await getEligibleRecipients(
+                    payload.tenantId,
+                    payload.type as AlertType,
+                    'email',
+                    payload.locationId
+                );
+                recipients = eligibleRecipients.map(r => r.email);
             }
 
             if (recipients.length === 0) {
-                logger.warn('No email recipients found', { payload });
+                logger.info('No eligible email recipients found', {
+                    tenantId: payload.tenantId,
+                    type: payload.type,
+                    locationId: payload.locationId,
+                });
                 return {
-                    success: false,
+                    success: true, // Not an error, just no recipients based on settings
                     channel: this.channel,
-                    error: 'No email recipients found',
                 };
             }
 

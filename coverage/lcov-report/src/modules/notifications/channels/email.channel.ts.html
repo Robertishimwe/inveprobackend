@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">20.58% </span>
+                <span class="strong">22.85% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>7/34</span>
+                <span class='fraction'>8/35</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">21.21% </span>
+                <span class="strong">23.52% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>7/33</span>
+                <span class='fraction'>8/34</span>
             </div>
         
             
@@ -226,7 +226,12 @@
 <a name='L161'></a><a href='#L161'>161</a>
 <a name='L162'></a><a href='#L162'>162</a>
 <a name='L163'></a><a href='#L163'>163</a>
-<a name='L164'></a><a href='#L164'>164</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -241,6 +246,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">22x</span>
+<span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">22x</span>
 <span class="cline-any cline-yes">22x</span>
@@ -267,14 +273,16 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -393,9 +401,10 @@
  * Email Notification Channel
  * 
  * Sends notifications via email using tenant's SMTP configuration.
+ * Now with role-based and location-based recipient filtering.
  */
 &nbsp;
-import { NotificationChannel } from '@prisma/client';
+import { NotificationChannel, AlertType } from '@prisma/client';
 import { prisma } from '@/config';
 import logger from '@/utils/logger';
 import {
@@ -404,17 +413,18 @@ import {
     NotificationResult,
 } from '../notification.types';
 import emailService from '../email.service';
+import { getEligibleRecipients } from '../notification-recipients.helper';
 &nbsp;
 export class EmailChannel implements INotificationChannel {
     readonly channel = NotificationChannel.EMAIL;
 &nbsp;
 <span class="fstat-no" title="function not covered" >    async </span>send(payload: NotificationPayload): Promise&lt;NotificationResult&gt; {
 <span class="cstat-no" title="statement not covered" >        try {</span>
-            // Get recipient(s)
+            // Get recipient(s) based on alert settings
             let recipients: string[] = <span class="cstat-no" title="statement not covered" >[];</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >            if (payload.userId) {</span>
-                // Get specific user's email
+                // If specific user is targeted, get their email
                 const user = <span class="cstat-no" title="statement not covered" >await prisma.user.findUnique({</span>
                     where: { id: payload.userId },
                     select: { email: true },
@@ -423,23 +433,25 @@ export class EmailChannel implements INotificationChannel {
 <span class="cstat-no" title="statement not covered" >                    recipients.push(user.email);</span>
                 }
             } else {
-                // Broadcast to all users in tenant with email preference enabled
-                const users = <span class="cstat-no" title="statement not covered" >await prisma.user.findMany({</span>
-                    where: {
-                        tenantId: payload.tenantId,
-                        isActive: true,
-                    },
-                    select: { email: true },
-                });
-<span class="cstat-no" title="statement not covered" >                recipients = users.map(<span class="fstat-no" title="function not covered" >(u</span>: { email: string }) =&gt; <span class="cstat-no" title="statement not covered" >u.email)</span>;</span>
+                // Use recipient helper to get eligible users based on alert settings
+                const eligibleRecipients = <span class="cstat-no" title="statement not covered" >await getEligibleRecipients(</span>
+                    payload.tenantId,
+                    payload.type as AlertType,
+                    'email',
+                    payload.locationId
+                );
+<span class="cstat-no" title="statement not covered" >                recipients = eligibleRecipients.map(<span class="fstat-no" title="function not covered" >r </span>=&gt; <span class="cstat-no" title="statement not covered" >r.email)</span>;</span>
             }
 &nbsp;
 <span class="cstat-no" title="statement not covered" >            <span class="missing-if-branch" title="if path not taken" >I</span>if (recipients.length === 0) {</span>
-<span class="cstat-no" title="statement not covered" >                logger.warn('No email recipients found', { payload });</span>
+<span class="cstat-no" title="statement not covered" >                logger.info('No eligible email recipients found', {</span>
+                    tenantId: payload.tenantId,
+                    type: payload.type,
+                    locationId: payload.locationId,
+                });
 <span class="cstat-no" title="statement not covered" >                return {</span>
-                    success: false,
+                    success: true, // Not an error, just no recipients based on settings
                     channel: this.channel,
-                    error: 'No email recipients found',
                 };
             }
 &nbsp;
@@ -559,7 +571,7 @@ export const emailChannel = new EmailChannel();
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-09T12:02:24.846Z
+                at 2025-12-10T10:05:29.353Z
             </div>
         <script src="../../../../prettify.js"></script>
         <script>

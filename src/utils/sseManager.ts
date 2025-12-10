@@ -49,6 +49,7 @@ export interface NotificationEvent {
     message: string;
     data: any;
     createdAt: string;
+    userId?: string | null; // For per-user notification filtering
 }
 
 type SSEEvent = StockUpdateEvent | SuspendedCountUpdateEvent | NotificationEvent;
@@ -198,6 +199,7 @@ export const broadcastNotification = (
         message: string;
         data: any;
         createdAt: string;
+        userId?: string | null; // For per-user notification filtering
     }
 ): void => {
     const clientSet = tenantClients.get(tenantId);
@@ -216,6 +218,7 @@ export const broadcastNotification = (
         message: notification.message,
         data: notification.data,
         createdAt: notification.createdAt,
+        userId: notification.userId,
     };
 
     const eventData = `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
