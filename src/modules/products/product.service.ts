@@ -157,6 +157,21 @@ const createProduct = async (productData: CreateProductDto, tenantId: string): P
             tenant: { connect: { id: tenantId } }
         };
 
+        // Add units if provided
+        if (productData.units && productData.units.length > 0) {
+            data.units = {
+                create: productData.units.map(u => ({
+                    name: u.name,
+                    conversionFactor: u.conversionFactor,
+                    barcode: u.barcode,
+                    costPrice: u.costPrice,
+                    salePrice: u.salePrice,
+                    isDefaultPurchase: u.isDefaultPurchase ?? false,
+                    isDefaultSale: u.isDefaultSale ?? false
+                }))
+            };
+        }
+
         const newProduct = await prisma.product.create({
             data,
             include: {
@@ -235,6 +250,7 @@ const queryProducts = async (
                             category: true
                         }
                     },
+                    units: true, // Include units in list
                     inventoryItems: {
                         where: allowedLocationIds.includes('*') ? undefined : { locationId: { in: allowedLocationIds } },
                         select: {
@@ -298,7 +314,8 @@ const getProductById = async (productId: string, tenantId: string): Promise<Safe
                     include: {
                         category: true
                     }
-                }
+                },
+                units: true
             }
         });
 
@@ -351,7 +368,7 @@ const updateProductById = async (
     Object.keys(updateData).forEach((key) => {
         const typedKey = key as keyof UpdateProductDto;
         // Exclude categoryIds and complex fields handled separately
-        if (typedKey !== 'dimensions' && typedKey !== 'customAttributes' && typedKey !== 'categoryIds' && updateData[typedKey] !== undefined) {
+        if (typedKey !== 'dimensions' && typedKey !== 'customAttributes' && typedKey !== 'categoryIds' && typedKey !== 'units' && updateData[typedKey] !== undefined) {
             (dataToUpdate as any)[typedKey] = updateData[typedKey];
         }
     });
@@ -451,11 +468,34 @@ const updateProductById = async (
                 }
             }
 
-            // Fetch the updated product with categories included
+            // Handle units updates (Replace all strategy)
+            if (updateData.units !== undefined) {
+                // Delete existing units
+                await tx.productUnit.deleteMany({ where: { productId } });
+
+                // Create new units
+                if (updateData.units.length > 0) {
+                    await tx.productUnit.createMany({
+                        data: updateData.units.map(u => ({
+                            productId,
+                            name: u.name,
+                            conversionFactor: u.conversionFactor,
+                            barcode: u.barcode,
+                            costPrice: u.costPrice,
+                            salePrice: u.salePrice,
+                            isDefaultPurchase: u.isDefaultPurchase ?? false,
+                            isDefaultSale: u.isDefaultSale ?? false
+                        }))
+                    });
+                }
+            }
+
+            // Fetch the updated product with categories and units included
             return await tx.product.findUnique({
                 where: { id: productId },
                 include: {
-                    categories: { select: { category: { select: { id: true, name: true } } } }
+                    categories: { select: { category: { select: { id: true, name: true } } } },
+                    units: true
                 }
             });
         });

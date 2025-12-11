@@ -1,5 +1,5 @@
 // src/modules/inventory/dto/transfer-item.dto.ts
-import { IsNotEmpty, IsUUID, IsNumber, Min } from 'class-validator';
+import { IsNotEmpty, IsUUID, IsNumber, Min, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class TransferItemDto {
@@ -12,6 +12,10 @@ export class TransferItemDto {
     @IsNotEmpty()
     @Type(() => Number)
     quantityRequested!: number;
+
+    @IsUUID('4')
+    @IsOptional()
+    uomId?: string;
 
     // Lot/Serial selection might happen during 'ship' phase, not creation
 }

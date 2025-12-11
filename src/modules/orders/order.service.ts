@@ -107,61 +107,100 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
         if (!customer) throw new ApiError(httpStatus.BAD_REQUEST, `Customer with ID ${data.customerId} not found.`);
     }
 
-    // 3. Fetch Product Details & Check Stock Availability
+    // 3. Fetch Product Details & Check Stock Availability (and UOMs)
     const productIds = data.items.map(item => item.productId);
-    const products = await prisma.product.findMany({
-        where: { id: { in: productIds }, tenantId },
-        include: { inventoryItems: { where: { locationId: data.locationId } } }
-    });
+    const uomIds = [...new Set(data.items.map(item => item.uomId).filter(Boolean))] as string[];
+
+    const [products, units] = await Promise.all([
+        prisma.product.findMany({
+            where: { id: { in: productIds }, tenantId },
+            include: { inventoryItems: { where: { locationId: data.locationId } } }
+        }),
+        uomIds.length > 0 ? prisma.productUnit.findMany({ where: { id: { in: uomIds } } }) : []
+    ]);
+
     if (products.length !== productIds.length) {
         const missingIds = productIds.filter(id => !products.some(p => p.id === id));
         throw new ApiError(httpStatus.BAD_REQUEST, `Product IDs not found: ${missingIds.join(', ')}`);
     }
 
+    const unitMap = new Map(units.map(u => [u.id, u]));
+
     let calculatedSubtotal = new Prisma.Decimal(0);
     const orderItemsData: Prisma.OrderItemCreateManyOrderInput[] = [];
-    const stockChecks: { productId: string, requested: Prisma.Decimal, available: Prisma.Decimal, isTracked: boolean, sku: string }[] = [];
+    // stockChecks: requested is in BASE units
+    const stockChecks: { productId: string, requestedBase: Prisma.Decimal, available: Prisma.Decimal, isTracked: boolean, sku: string }[] = [];
     let needsBackorder = false;
 
     for (const itemDto of data.items) {
         const product = products.find(p => p.id === itemDto.productId);
         if (!product) continue;
 
-        const requestedQuantity = new Prisma.Decimal(itemDto.quantity);
-        if (requestedQuantity.lessThanOrEqualTo(0)) {
+        // UOM Logic
+        let conversionFactor = new Prisma.Decimal(1);
+        let uomPrice: number | null = null;
+        let uomId: string | undefined = undefined;
+
+        if (itemDto.uomId) {
+            const unit = unitMap.get(itemDto.uomId);
+            if (!unit) throw new ApiError(httpStatus.BAD_REQUEST, `Invalid UOM ID ${itemDto.uomId} for product ${product.sku}.`);
+            // Ideally check if unit belongs to product, but IDs are unique globally usually. 
+            // Ideally schema enforcing relation, but standard check:
+            if (unit.productId !== product.id) throw new ApiError(httpStatus.BAD_REQUEST, `UOM ${unit.name} does not belong to product ${product.sku}.`);
+
+            conversionFactor = new Prisma.Decimal(unit.conversionFactor);
+            uomPrice = unit.salePrice ? Number(unit.salePrice) : null;
+            uomId = unit.id;
+        }
+
+        const quantityOrdered = new Prisma.Decimal(itemDto.quantity); // Input quantity (e.g. 10 Boxes)
+        const quantityBase = quantityOrdered.times(conversionFactor); // Base quantity (e.g. 240 units)
+
+        if (quantityOrdered.lessThanOrEqualTo(0)) {
             throw new ApiError(httpStatus.BAD_REQUEST, `Quantity for product ${product.sku} must be positive.`);
         }
 
-        const unitPrice = itemDto.unitPrice !== undefined
-            ? new Prisma.Decimal(itemDto.unitPrice)
-            : product.basePrice ?? new Prisma.Decimal(0);
+        // Pricing Logic
+        let unitPriceDecimal: Prisma.Decimal;
+        if (itemDto.unitPrice !== undefined) {
+            unitPriceDecimal = new Prisma.Decimal(itemDto.unitPrice);
+        } else if (uomPrice !== null) {
+            unitPriceDecimal = new Prisma.Decimal(uomPrice);
+        } else {
+            // Default to base price * factor
+            const base = product.basePrice ?? new Prisma.Decimal(0);
+            unitPriceDecimal = base.times(conversionFactor);
+        }
 
-        if (unitPrice.lessThan(0)) { throw new ApiError(httpStatus.BAD_REQUEST, `Unit price for product ${product.sku} cannot be negative.`); }
+        if (unitPriceDecimal.lessThan(0)) { throw new ApiError(httpStatus.BAD_REQUEST, `Unit price for product ${product.sku} cannot be negative.`); }
 
-        const lineTotal = unitPrice.times(requestedQuantity);
+        const lineTotal = unitPriceDecimal.times(quantityOrdered);
         calculatedSubtotal = calculatedSubtotal.plus(lineTotal);
 
         orderItemsData.push({
             tenantId, // Include if needed by schema
             productId: product.id,
-            productSnapshot: { sku: product.sku, name: product.name, price: unitPrice.toNumber() },
-            quantity: requestedQuantity,
-            unitPrice: unitPrice,
+            productSnapshot: { sku: product.sku, name: product.name, price: unitPriceDecimal.toNumber() },
+            quantity: quantityOrdered, // Store the UOM quantity
+            unitPrice: unitPriceDecimal,
             originalUnitPrice: product.basePrice,
             taxAmount: 0, taxRate: 0, // TODO: Calculate tax
             lineTotal: lineTotal,
             lotNumber: itemDto.lotNumber, serialNumber: itemDto.serialNumber, notes: itemDto.notes,
+            uomId: uomId,
+            conversionFactor: conversionFactor,
         });
 
         if (product.isStockTracked) {
             const inventory = product.inventoryItems[0];
             const availableQuantity = inventory ? inventory.quantityOnHand.minus(inventory.quantityAllocated) : new Prisma.Decimal(0);
-            stockChecks.push({ productId: product.id, requested: requestedQuantity, available: availableQuantity, isTracked: true, sku: product.sku });
+            // Check availability against rounded BASE quantity
+            stockChecks.push({ productId: product.id, requestedBase: quantityBase, available: availableQuantity, isTracked: true, sku: product.sku });
 
-            if (availableQuantity.lessThan(requestedQuantity)) {
+            if (availableQuantity.lessThan(quantityBase)) {
                 const allowBackorder = false; // TODO: Get from config
                 if (!allowBackorder) {
-                    throw new ApiError(httpStatus.BAD_REQUEST, `Insufficient stock for product ${product.sku}. Available: ${availableQuantity}, Requested: ${requestedQuantity}`);
+                    throw new ApiError(httpStatus.BAD_REQUEST, `Insufficient stock for product ${product.sku}. Available: ${availableQuantity}, Requested: ${quantityBase} (Base Units)`);
                 } else {
                     logContext.backorderedProduct = product.sku;
                     logger.warn(`Product ${product.sku} is backordered`, logContext);
@@ -169,7 +208,7 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
                 }
             }
         } else {
-            stockChecks.push({ productId: product.id, requested: requestedQuantity, available: new Prisma.Decimal(Infinity), isTracked: false, sku: product.sku });
+            stockChecks.push({ productId: product.id, requestedBase: quantityBase, available: new Prisma.Decimal(Infinity), isTracked: false, sku: product.sku });
         }
     }
 
@@ -210,14 +249,14 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
             // Allocate Stock if order is in a state that requires it
             if (order.status === OrderStatus.PROCESSING) {
                 for (const stockCheck of stockChecks) {
-                    if (stockCheck.isTracked && stockCheck.requested.greaterThan(0)) {
+                    if (stockCheck.isTracked && stockCheck.requestedBase.greaterThan(0)) {
                         const orderItem = order.items.find(oi => oi.productId === stockCheck.productId);
                         if (!orderItem) { throw new Error(`Consistency Error: Order item not found for product ${stockCheck.productId}`); }
 
                         // Use the imported/available stock movement function
                         await inventoryService._recordStockMovement(
                             tx, tenantId, userId, stockCheck.productId, data.locationId,
-                            stockCheck.requested.negated(), // Decrease stock
+                            stockCheck.requestedBase.negated(), // Decrease stock by BASE quantity
                             InventoryTransactionType.SALE,
                             null, // COGS calculated later
                             { orderId: order.id, orderItemId: orderItem.id },
@@ -228,6 +267,7 @@ const createOrder = async (data: CreateOrderDto, tenantId: string, userId: strin
                 }
                 logger.info(`Stock allocated/recorded for order ${order.orderNumber}`, logContext);
             } else { logger.info(`Order created with status ${order.status}. Stock allocation skipped.`, logContext); }
+
 
             return order;
         });

@@ -29,5 +29,9 @@ export class CreatePOItemDto {
     @IsOptional()
     taxRate?: number = 0; // Optional input, default 0
 
+    @IsUUID('4', { message: 'UOM ID must be a valid UUID.' })
+    @IsOptional()
+    uomId?: string;
+
     // taxAmount and lineTotal are calculated in the service
 }

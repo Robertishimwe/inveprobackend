@@ -442,12 +442,33 @@ model Product {
   adjustmentItems InventoryAdjustmentItem[]
   transferItems   InventoryTransferItem[]
   stockCountItems StockCountItem[]
+  units           ProductUnit[]             // Relation to ProductUnit
 
   @@unique([tenantId, sku]) // SKU unique per tenant
   @@index([tenantId])
   @@index([name]) // Index name for searching
   @@index([isActive])
   @@map("products")
+}
+
+model ProductUnit {
+  id               String   @id @default(uuid())
+  productId        String   @map("product_id")
+  name             String   // e.g. "Crate", "Box"
+  conversionFactor Decimal  @map("conversion_factor") @db.Decimal(19, 4) // e.g. 24
+  barcode          String?  // Specific barcode for the crate
+  costPrice        Decimal? @map("cost_price") @db.Decimal(19, 4) // Optional: Override cost per crate
+  salePrice        Decimal? @map("sale_price") @db.Decimal(19, 4) // Optional: Override price per crate
+  isDefaultPurchase Boolean @default(false) @map("is_default_purchase")
+  isDefaultSale     Boolean @default(false) @map("is_default_sale")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@unique([productId, name])
+  @@index([barcode]) // Important for POS scanning
+  @@map("product_units")
 }
 
 model ProductCategory {
@@ -672,6 +693,8 @@ model InventoryTransferItem {
   quantityRequested Decimal @map("quantity_requested") @db.Decimal(19, 4)
   quantityShipped   Decimal @default(0) @map("quantity_shipped") @db.Decimal(19, 4)
   quantityReceived  Decimal @default(0) @map("quantity_received") @db.Decimal(19, 4)
+  uomId             String? @map("uom_id") // ID of the specific unit
+  conversionFactor  Decimal? @default(1) @map("conversion_factor") @db.Decimal(19, 4)
   lotNumber         String? @map("lot_number")
   serialNumber      String? @map("serial_number")
 
@@ -796,6 +819,8 @@ model PurchaseOrderItem {
   taxRate          Decimal   @default(0) @map("tax_rate") @db.Decimal(5, 4)
   taxAmount        Decimal   @default(0) @map("tax_amount") @db.Decimal(19, 4)
   lineTotal        Decimal   @map("line_total") @db.Decimal(19, 4) // Calculated = quantityOrdered * unitCost (before tax)
+  uomId            String?   @map("uom_id") // ID of the specific unit (null = base unit)
+  conversionFactor Decimal?  @default(1) @map("conversion_factor") @db.Decimal(19, 4) // Factor at time of purchase
   receivedAt       DateTime? @map("received_at")
   notes            String?
 
@@ -924,6 +949,8 @@ model OrderItem {
   lotNumber           String?  @map("lot_number")
   serialNumber        String?  @map("serial_number")
   quantityReturned    Decimal  @default(0) @map("quantity_returned") @db.Decimal(19, 4) // Tracks returned qty for this specific line
+  uomId               String?   @map("uom_id") // ID of the specific unit (null = base unit)
+  conversionFactor    Decimal?  @default(1) @map("conversion_factor") @db.Decimal(19, 4) // Factor at time of sale
   notes               String?
   customAttributes    Json?    @default("{}") @map("custom_attributes")
 

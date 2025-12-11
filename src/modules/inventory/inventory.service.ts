@@ -392,11 +392,25 @@ const createTransfer = async (
         notes: data.notes,
         createdByUserId: userId,
         items: {
-          create: data.items.map((item) => ({
-            tenantId, // Needed if model has tenantId directly
-            productId: item.productId,
-            quantityRequested: new Prisma.Decimal(item.quantityRequested), // Ensure Decimal
-            // quantityShipped/Received default to 0
+          create: await Promise.all(data.items.map(async (item) => {
+            let conversionFactor = new Prisma.Decimal(1);
+            if (item.uomId) {
+              const unit = await prisma.productUnit.findUnique({
+                where: { id: item.uomId }
+              });
+              if (!unit || unit.productId !== item.productId) {
+                throw new ApiError(httpStatus.BAD_REQUEST, `Invalid UOM ${item.uomId} for product ${item.productId}`);
+              }
+              conversionFactor = unit.conversionFactor;
+            }
+
+            return {
+              tenantId,
+              productId: item.productId,
+              quantityRequested: new Prisma.Decimal(item.quantityRequested),
+              uomId: item.uomId,
+              conversionFactor: conversionFactor
+            };
           })),
         },
       },
@@ -456,7 +470,10 @@ const shipTransfer = async (
       // 3. Process Items: Decrease stock at source, log transactions
       for (const item of transfer.items) {
         // Assume shipping full requested quantity now
-        const quantityToShip = item.quantityRequested; // This is already Decimal
+        const quantityToShip = item.quantityRequested; // This is already Decimal (in UOM)
+        const conversionFactor = item.conversionFactor || new Prisma.Decimal(1);
+        const quantityToBase = quantityToShip.mul(conversionFactor);
+
         if (quantityToShip.isZero() || quantityToShip.lessThan(0)) {
           logger.warn(
             `Skipping shipping for item ${item.id} with zero/negative quantity`,
@@ -465,8 +482,26 @@ const shipTransfer = async (
           continue;
         }
 
-        // TODO: Add check here for available stock at source location before decrementing?
-        // This would require fetching the source InventoryItem within the transaction.
+        // Check for available stock at source location
+        // We use findFirst instead of findUnique because the composite key is optional in usage or types might vary,
+        // but tenantId_productId_locationId is unique.
+        const sourceItem = await tx.inventoryItem.findUnique({
+          where: {
+            tenantId_productId_locationId: {
+              tenantId,
+              productId: item.productId,
+              locationId: transfer.sourceLocationId
+            }
+          }
+        });
+
+        const available = sourceItem ? sourceItem.quantityOnHand : new Prisma.Decimal(0);
+        if (available.lessThan(quantityToBase)) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Insufficient stock for product ${item.productId} (Item: ${item.id}). Requested: ${quantityToBase}, Available: ${available}`
+          );
+        }
 
         const { transaction } = await _recordStockMovement(
           tx,
@@ -474,7 +509,7 @@ const shipTransfer = async (
           userId,
           item.productId,
           transfer.sourceLocationId,
-          quantityToShip.negated(), // Use negated Decimal value for decrease
+          quantityToBase.negated(), // Use negated Base Quantity for decrease
           InventoryTransactionType.TRANSFER_OUT,
           null, // Cost not tracked on transfer out
           { transferId: transfer.id },
@@ -591,6 +626,9 @@ const receiveTransfer = async (
           const quantityReceivedDecimal = new Prisma.Decimal(
             receivedItemPayload.quantityReceived
           );
+          const conversionFactor = transferLineItem.conversionFactor || new Prisma.Decimal(1);
+          const quantityToBase = quantityReceivedDecimal.mul(conversionFactor);
+
           // Calculate max quantity that can *still* be received for this line item
           const maxReceivable = transferLineItem.quantityRequested.minus(
             transferLineItem.quantityReceived
@@ -622,7 +660,7 @@ const receiveTransfer = async (
             userId,
             receivedItemPayload.productId,
             transfer.destinationLocationId,
-            quantityReceivedDecimal, // Use Decimal for positive increase
+            quantityToBase, // Use Base Quantity (Decimal) for positive increase
             InventoryTransactionType.TRANSFER_IN,
             null, // Cost not tracked on transfer in
             { transferId: transfer.id },

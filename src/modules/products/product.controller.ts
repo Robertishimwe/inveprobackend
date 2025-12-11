@@ -22,12 +22,32 @@ const getProducts = catchAsync(async (req: Request, res: Response) => {
     const filterParams = pick(req.query, [
         'sku', 'name', 'brand', 'productType', 'isActive', 'isStockTracked',
         'requiresSerialNumber', 'requiresLotTracking', 'requiresExpiryDate', 'taxable',
-        'categoryId' // Added categoryId filter
+        'categoryId', 'search' // Added search and categoryId filter
     ]);
     const options = pick(req.query, ['sortBy', 'limit', 'page']);
 
     // Build Prisma WhereInput object, always including tenantId
     const filter: Prisma.ProductWhereInput = { tenantId };
+
+    if (filterParams.search) {
+        const s = filterParams.search as string;
+        filter.OR = [
+            { name: { contains: s, mode: 'insensitive' } },
+            { sku: { contains: s, mode: 'insensitive' } },
+            { brand: { contains: s, mode: 'insensitive' } },
+            // Check product barcode if it exists in schema (safest to assume sku acts as main code, but units have barcodes)
+            // { barcode: { contains: s, mode: 'insensitive' } }, 
+            { units: { some: { barcode: { contains: s, mode: 'insensitive' } } } } // Search UOM barcodes
+        ];
+    } else {
+        // Only apply specific filters if no global search (or combine them? usually specific overrides or narrows)
+        // For now, let's allow specific filters to AND with search if provided, but structure below implies specific only if used.
+        // Actually, let's keep specific filters working ALONGSIDE search (AND logic)
+
+        if (filterParams.sku) filter.sku = { contains: filterParams.sku as string, mode: 'insensitive' };
+        if (filterParams.name) filter.name = { contains: filterParams.name as string, mode: 'insensitive' };
+        if (filterParams.brand) filter.brand = { contains: filterParams.brand as string, mode: 'insensitive' };
+    }
 
     if (filterParams.categoryId) {
         filter.categories = {
@@ -37,9 +57,6 @@ const getProducts = catchAsync(async (req: Request, res: Response) => {
         };
     }
 
-    if (filterParams.sku) filter.sku = { contains: filterParams.sku as string, mode: 'insensitive' };
-    if (filterParams.name) filter.name = { contains: filterParams.name as string, mode: 'insensitive' };
-    if (filterParams.brand) filter.brand = { contains: filterParams.brand as string, mode: 'insensitive' };
     if (filterParams.productType) filter.productType = { equals: filterParams.productType as any }; // Cast to any if using Prisma enum type directly
     // Boolean filters
     if (filterParams.isActive !== undefined) filter.isActive = filterParams.isActive === 'true';

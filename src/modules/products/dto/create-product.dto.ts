@@ -107,4 +107,45 @@ export class CreateProductDto {
   imageUrl?: string;
 
   // categoryIds: Handled separately if needed via relations or dedicated endpoints
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductUnitDto)
+  @IsOptional()
+  units?: ProductUnitDto[];
+}
+
+export class ProductUnitDto {
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  conversionFactor!: number;
+
+  @IsString()
+  @IsOptional()
+  barcode?: string;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @IsOptional()
+  costPrice?: number;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  @IsOptional()
+  salePrice?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isDefaultPurchase?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  isDefaultSale?: boolean;
 }

@@ -32,4 +32,7 @@ export class CreateOrderItemDto {
     @IsNumber({ maxDecimalPlaces: 4 }) @Min(0) @Max(1) @Type(() => Number) @IsOptional()
     discountPercent?: number; // % discount (e.g., 0.10 for 10%) for this line
 
+    @IsUUID('4')
+    @IsOptional()
+    uomId?: string;
 }

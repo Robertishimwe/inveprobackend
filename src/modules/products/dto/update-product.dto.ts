@@ -6,6 +6,7 @@ import {
 import { Type } from 'class-transformer';
 import { DimensionsDto } from './dimensions.dto';
 import { ProductType } from '@prisma/client';
+import { ProductUnitDto } from './create-product.dto';
 
 // Note: Does NOT allow updating SKU. Use a dedicated process for SKU changes if ever needed.
 export class UpdateProductDto {
@@ -84,4 +85,10 @@ export class UpdateProductDto {
   @IsString()
   @IsOptional()
   imageUrl?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductUnitDto)
+  @IsOptional()
+  units?: ProductUnitDto[];
 }

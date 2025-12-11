@@ -82,7 +82,8 @@ async function generatePONumber(tenantId: string, tx: Prisma.TransactionClient):
 function prepareItemsAndCalculateTotals(
     itemsDto: CreatePOItemDto[],
     shippingCostInput: number | undefined,
-    tenantId: string // Needed if item model requires tenantId directly
+    tenantId: string, // Needed if item model requires tenantId directly
+    unitMap: Map<string, number> // uomId -> conversionFactor
 ): {
     itemsData: Prisma.PurchaseOrderItemCreateManyPurchaseOrderInput[];
     subtotal: Prisma.Decimal;
@@ -105,6 +106,13 @@ function prepareItemsAndCalculateTotals(
         const taxRate = item.taxRate ? new Prisma.Decimal(item.taxRate) : new Prisma.Decimal(0);
         if (taxRate.lessThan(0)) throw new ApiError(httpStatus.BAD_REQUEST, `Tax rate for product ${item.productId} cannot be negative.`);
 
+        // Validate UOM if provided
+        let conversionFactor = new Prisma.Decimal(1);
+        if (item.uomId) {
+            const factor = unitMap.get(item.uomId);
+            if (!factor) throw new ApiError(httpStatus.BAD_REQUEST, `Invalid UOM ID ${item.uomId} for product ${item.productId}.`);
+            conversionFactor = new Prisma.Decimal(factor);
+        }
 
         // --- Placeholder: Replace with actual tax calculation logic ---
         // This might involve fetching tax rates based on location, product type, supplier status, etc.
@@ -124,6 +132,8 @@ function prepareItemsAndCalculateTotals(
             taxRate: taxRate,
             taxAmount: itemTax, // Assign calculated item tax
             lineTotal: lineTotal, // Assign calculated line total
+            uomId: item.uomId,
+            conversionFactor: conversionFactor,
         };
     });
 
@@ -197,9 +207,22 @@ const createPurchaseOrder = async (data: CreatePurchaseOrderDto, tenantId: strin
         throw new ApiError(httpStatus.BAD_REQUEST, `One or more active products not found: ${missingIds.join(', ')}`);
     }
 
-    // 3. Prepare Item Data and Calculate Totals
+    // 3. Prepare Item Data and Calculate Totals (Fetch UOMs first)
+    const uomIds = [...new Set(data.items.map(item => item.uomId).filter(Boolean))] as string[];
+    const unitMap = new Map<string, number>();
+    if (uomIds.length > 0) {
+        const units = await prisma.productUnit.findMany({ where: { id: { in: uomIds } }, select: { id: true, conversionFactor: true } });
+        units.forEach(u => unitMap.set(u.id, Number(u.conversionFactor)));
+
+        // Verify all provided UOMs were found
+        const missingUoms = uomIds.filter(id => !unitMap.has(id));
+        if (missingUoms.length > 0) {
+            throw new ApiError(httpStatus.BAD_REQUEST, `One or more UOMs not found or inactive: ${missingUoms.join(', ')}`);
+        }
+    }
+
     const { itemsData, subtotal, taxAmount, totalAmount, shippingCost } = prepareItemsAndCalculateTotals(
-        data.items, data.shippingCost, tenantId
+        data.items, data.shippingCost, tenantId, unitMap
     );
 
     // 4. Create PO and Items in Transaction
@@ -742,13 +765,19 @@ const receivePurchaseOrderItems = async (poId: string, data: ReceivePurchaseOrde
         let serialsToReceive: string[] = [];
         if (poLineItem.product.requiresSerialNumber) {
             serialsToReceive = receivedItemDto.serialNumbers ?? (receivedItemDto.serialNumber ? [receivedItemDto.serialNumber] : []);
-            // Ensure quantity is an integer for serialized items
-            if (!quantityReceivedDecimal.isInteger()) {
-                throw new ApiError(httpStatus.BAD_REQUEST, `Received quantity (${quantityReceivedDecimal}) must be a whole number for serialized PO Item ${poLineItem.id}.`);
+
+            // Calculate total base units expected
+            const conversionFactor = poLineItem.conversionFactor ? new Prisma.Decimal(poLineItem.conversionFactor) : new Prisma.Decimal(1);
+            const totalBaseUnits = quantityReceivedDecimal.times(conversionFactor);
+
+            // Ensure quantity is an integer (in base units) for serialized items
+            if (!totalBaseUnits.isInteger()) {
+                throw new ApiError(httpStatus.BAD_REQUEST, `Total base units (${totalBaseUnits}) must be a whole number for serialized PO Item ${poLineItem.id}.`);
             }
-            const expectedSerialCount = quantityReceivedDecimal.toNumber();
+
+            const expectedSerialCount = totalBaseUnits.toNumber();
             if (serialsToReceive.length !== expectedSerialCount) {
-                throw new ApiError(httpStatus.BAD_REQUEST, `Incorrect number of serial numbers provided for PO Item ${poLineItem.id}. Expected ${expectedSerialCount}, got ${serialsToReceive.length}.`);
+                throw new ApiError(httpStatus.BAD_REQUEST, `Incorrect number of serial numbers provided for PO Item ${poLineItem.id}. Expected ${expectedSerialCount} (Qty ${quantityReceivedDecimal} * Factor ${conversionFactor}), got ${serialsToReceive.length}.`);
             }
             // TODO: Add pre-check for serial number format/uniqueness if feasible (might require extra DB query)
         }
@@ -789,8 +818,22 @@ const receivePurchaseOrderItems = async (poId: string, data: ReceivePurchaseOrde
                 const unitCostForTx = poLineItem.unitCost; // Use cost from PO line for inventory transaction
 
                 // 4. Update Inventory Item Stock & Collect Transaction Data
+                const conversionFactor = poLineItem.conversionFactor ? new Prisma.Decimal(poLineItem.conversionFactor) : new Prisma.Decimal(1);
+                const stockAdjustment = quantityReceivedDecimal.times(conversionFactor);
+
                 if (poLineItem.product.requiresSerialNumber && serialsToReceive.length > 0) {
                     // Handle serialized items: one stock update and one transaction log per serial
+                    // Serialized items usually imply Unit=1, but if we have a pack of serialized items, we need to be careful.
+                    // Assuming serialized items are always base units for now, or factor is 1. 
+                    // If factor > 1, it means we opened a box and got X serials? 
+                    // The logic below iterates per SERIAL. 
+                    // If we receive 1 Box of 10 Phones, we expect 10 Serials.
+                    // quantityReceived is 1 (Box). serialsToReceive length SHOULD be 10.
+                    // Pre-validation logic checks if serials count == quantityReceived.toNumber(). 
+                    // This creates a conflict if UOM is used with Serials.
+                    // For now, let's assume UOM + Serials requires quantityReceived to match serials count (so user enters 10, not 1 Box).
+                    // OR we adjust the validation. 
+                    // Let's stick to base logic for serials for now (factor 1).
                     for (const serial of serialsToReceive) {
                         // Update inventory item quantity (increment by 1)
                         await _updateInventoryItemQuantity(tx, tenantId, poLineItem.productId, poForCheck.locationId, 1);
@@ -810,12 +853,12 @@ const receivePurchaseOrderItems = async (poId: string, data: ReceivePurchaseOrde
                         });
                     }
                 } else if (!poLineItem.product.requiresSerialNumber) {
-                    // Non-serialized item: single stock update and collect one transaction log
-                    await _updateInventoryItemQuantity(tx, tenantId, poLineItem.productId, poForCheck.locationId, quantityReceivedDecimal);
+                    // Apply conversion factor for non-serialized items
+                    await _updateInventoryItemQuantity(tx, tenantId, poLineItem.productId, poForCheck.locationId, stockAdjustment);
                     inventoryTransactionData.push({
                         tenantId, productId: poLineItem.productId, locationId: poForCheck.locationId,
                         transactionType: InventoryTransactionType.PURCHASE_RECEIPT,
-                        quantityChange: quantityReceivedDecimal, // Full quantity received
+                        quantityChange: stockAdjustment, // Record actual stock change
                         unitCost: unitCostForTx,
                         relatedPoId: poForCheck.id,
                         relatedPoItemId: poLineItem.id,
