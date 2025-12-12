@@ -579,6 +579,24 @@ const deleteProductById = async (productId: string, tenantId: string): Promise<v
 
 
 // Export the service methods
+/**
+ * Helper to find product IDs where customAttributes (JSON) contains a search string.
+ */
+const findIdsByCustomAttributeSearch = async (searchTerm: string, tenantId: string): Promise<string[]> => {
+    try {
+        const result = await prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM products
+            WHERE tenant_id = ${tenantId}
+            AND custom_attributes::text ILIKE ${`%${searchTerm}%`}
+        `;
+        return result.map(r => r.id);
+    } catch (error) {
+        logger.error('Error in findIdsByCustomAttributeSearch', { error, searchTerm, tenantId });
+        return [];
+    }
+};
+
+// Export the service methods
 export const productService = {
     createProduct,
     queryProducts,
@@ -586,4 +604,6 @@ export const productService = {
     updateProductById,
     deleteProductById,
     invalidateProductCache, // Exported for POS/inventory to bust cache after stock changes
+    findIdsByCustomAttributeSearch
 };
+

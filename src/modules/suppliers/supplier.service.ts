@@ -10,7 +10,7 @@ import { UpdateSupplierDto } from './dto/update-supplier.dto';
 
 
 // Define log context type if not global
-type LogContext = { function?: string; tenantId?: string | null; supplierId?: string | null; data?: any; error?: any; [key: string]: any; };
+type LogContext = { function?: string; tenantId?: string | null; supplierId?: string | null; data?: any; error?: any;[key: string]: any; };
 
 // Type for safe response (currently same as Supplier)
 export type SafeSupplier = Omit<Supplier, ''>;
@@ -60,9 +60,9 @@ const createSupplier = async (data: CreateSupplierDto, tenantId: string): Promis
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error creating supplier`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             throw new ApiError(httpStatus.CONFLICT, `Supplier name conflict during creation.`);
-         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            throw new ApiError(httpStatus.CONFLICT, `Supplier name conflict during creation.`);
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to create supplier.');
     }
 };
@@ -106,7 +106,7 @@ const querySuppliers = async (
  * Get supplier by ID, ensuring tenant isolation.
  */
 const getSupplierById = async (supplierId: string, tenantId: string): Promise<SafeSupplier | null> => {
-     const logContext: LogContext = { function: 'getSupplierById', supplierId, tenantId };
+    const logContext: LogContext = { function: 'getSupplierById', supplierId, tenantId };
     try {
         const supplier = await prisma.supplier.findFirst({
             where: { id: supplierId, tenantId }
@@ -114,9 +114,9 @@ const getSupplierById = async (supplierId: string, tenantId: string): Promise<Sa
             // include: { purchaseOrders: { take: 5, orderBy: { createdAt: 'desc' }} } // Example
         });
         if (!supplier) {
-             logger.warn(`Supplier not found or tenant mismatch`, logContext);
-             return null;
-         }
+            logger.warn(`Supplier not found or tenant mismatch`, logContext);
+            return null;
+        }
         logger.debug(`Supplier found successfully`, logContext);
         return supplier;
     } catch (error: any) {
@@ -137,15 +137,15 @@ const updateSupplierById = async (
     const logContext: LogContext = { function: 'updateSupplierById', supplierId, tenantId, data: updateData };
 
     // 1. Verify exists in tenant
-    const existing = await prisma.supplier.findFirst({ where: { id: supplierId, tenantId }, select: { id: true, name: true }});
+    const existing = await prisma.supplier.findFirst({ where: { id: supplierId, tenantId }, select: { id: true, name: true } });
     if (!existing) {
-         logger.warn(`Update failed: Supplier not found`, logContext);
-         throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found.');
+        logger.warn(`Update failed: Supplier not found`, logContext);
+        throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found.');
     }
 
     // 2. Check name uniqueness if changing name
     if (updateData.name && updateData.name !== existing.name) {
-        const nameExists = await prisma.supplier.findFirst({ where: { name: updateData.name, tenantId, id: { not: supplierId } }, select: { id: true }});
+        const nameExists = await prisma.supplier.findFirst({ where: { name: updateData.name, tenantId, id: { not: supplierId } }, select: { id: true } });
         if (nameExists) {
             logger.warn(`Update failed: Name already exists`, logContext);
             throw new ApiError(httpStatus.CONFLICT, `Supplier with name "${updateData.name}" already exists.`);
@@ -156,7 +156,7 @@ const updateSupplierById = async (
     const dataToUpdate: Prisma.SupplierUpdateInput = {};
     Object.keys(updateData).forEach((key) => {
         const typedKey = key as keyof UpdateSupplierDto;
-         // Skip complex fields handled separately
+        // Skip complex fields handled separately
         if (typedKey !== 'address' && typedKey !== 'customAttributes' && updateData[typedKey] !== undefined) {
             (dataToUpdate as any)[typedKey] = updateData[typedKey];
         }
@@ -166,35 +166,35 @@ const updateSupplierById = async (
 
     // Handle address update/clear
     if (updateData.address !== undefined) {
-         dataToUpdate.address = updateData.address as Prisma.JsonObject ?? Prisma.JsonNull;
+        dataToUpdate.address = updateData.address as Prisma.JsonObject ?? Prisma.JsonNull;
     }
     // Handle custom attributes update/clear
     if (updateData.customAttributes !== undefined) {
-         if (updateData.customAttributes === null) {
-             dataToUpdate.customAttributes = Prisma.JsonNull;
-         } else {
-             try {
-                  if(typeof updateData.customAttributes === 'string') {
-                     dataToUpdate.customAttributes = JSON.parse(updateData.customAttributes);
-                  } else {
-                      // Should not happen if DTO validation is correct
-                       logger.warn("Received non-string customAttributes for update", logContext);
-                       throw new Error("Invalid customAttributes format");
-                  }
-             } catch (e) {
-                  logContext.error = e;
-                  logger.warn(`Update failed: Invalid JSON for customAttributes`, logContext);
-                 throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid JSON format for customAttributes.');
-             }
-         }
+        if (updateData.customAttributes === null) {
+            dataToUpdate.customAttributes = Prisma.JsonNull;
+        } else {
+            try {
+                if (typeof updateData.customAttributes === 'string') {
+                    dataToUpdate.customAttributes = JSON.parse(updateData.customAttributes);
+                } else {
+                    // Should not happen if DTO validation is correct
+                    logger.warn("Received non-string customAttributes for update", logContext);
+                    throw new Error("Invalid customAttributes format");
+                }
+            } catch (e) {
+                logContext.error = e;
+                logger.warn(`Update failed: Invalid JSON for customAttributes`, logContext);
+                throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid JSON format for customAttributes.');
+            }
+        }
     }
 
-     if (Object.keys(dataToUpdate).length === 0) {
-         logger.info(`Supplier update skipped: No changes provided`, logContext);
-         const currentSupplier = await getSupplierById(supplierId, tenantId); // Re-fetch needed? existing only has id/name
-         if (!currentSupplier) throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found.');
-         return currentSupplier;
-     }
+    if (Object.keys(dataToUpdate).length === 0) {
+        logger.info(`Supplier update skipped: No changes provided`, logContext);
+        const currentSupplier = await getSupplierById(supplierId, tenantId); // Re-fetch needed? existing only has id/name
+        if (!currentSupplier) throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found.');
+        return currentSupplier;
+    }
 
     // 4. Perform update
     try {
@@ -208,12 +208,12 @@ const updateSupplierById = async (
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error updating supplier`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             throw new ApiError(httpStatus.CONFLICT, `Supplier name conflict during update.`);
-         }
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found during update attempt.');
-         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            throw new ApiError(httpStatus.CONFLICT, `Supplier name conflict during update.`);
+        }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found during update attempt.');
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to update supplier.');
     }
 };
@@ -225,10 +225,10 @@ const deleteSupplierById = async (supplierId: string, tenantId: string): Promise
     const logContext: LogContext = { function: 'deleteSupplierById', supplierId, tenantId };
 
     // 1. Verify exists and is active
-    const existing = await prisma.supplier.findFirst({ where: { id: supplierId, tenantId }});
+    const existing = await prisma.supplier.findFirst({ where: { id: supplierId, tenantId } });
     if (!existing) {
-         logger.warn(`Deactivation failed: Supplier not found`, logContext);
-         throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found.');
+        logger.warn(`Deactivation failed: Supplier not found`, logContext);
+        throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found.');
     }
     if (!existing.isActive) {
         logger.info(`Supplier already inactive`, logContext);
@@ -237,17 +237,17 @@ const deleteSupplierById = async (supplierId: string, tenantId: string): Promise
 
     // 2. Dependency Check (Example: Check for non-completed/non-cancelled POs)
     const activePoCount = await prisma.purchaseOrder.count({
-         where: {
-             supplierId: supplierId,
-             tenantId: tenantId,
-             status: { notIn: [PurchaseOrderStatus.CANCELLED, PurchaseOrderStatus.FULLY_RECEIVED] }
-         }
-     });
+        where: {
+            supplierId: supplierId,
+            tenantId: tenantId,
+            status: { notIn: [PurchaseOrderStatus.CANCELLED, PurchaseOrderStatus.FULLY_RECEIVED] }
+        }
+    });
 
-     if (activePoCount > 0) {
-         logger.warn(`Deactivation failed: Supplier has active purchase orders`, { ...logContext, activePoCount });
-         throw new ApiError(httpStatus.BAD_REQUEST, `Cannot deactivate supplier with ${activePoCount} active purchase order(s).`);
-     }
+    if (activePoCount > 0) {
+        logger.warn(`Deactivation failed: Supplier has active purchase orders`, { ...logContext, activePoCount });
+        throw new ApiError(httpStatus.BAD_REQUEST, `Cannot deactivate supplier with ${activePoCount} active purchase order(s).`);
+    }
 
     // 3. Perform update to deactivate
     try {
@@ -261,18 +261,37 @@ const deleteSupplierById = async (supplierId: string, tenantId: string): Promise
     } catch (error: any) {
         logContext.error = error;
         logger.error(`Error deactivating supplier`, logContext);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-             throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found during deactivation attempt.');
-         }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found during deactivation attempt.');
+        }
         throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to deactivate supplier.');
     }
 };
 
 
-export const supplierService = {
-  createSupplier,
-  querySuppliers,
-  getSupplierById,
-  updateSupplierById,
-  deleteSupplierById, // Note: This performs a soft delete (deactivation)
+/**
+ * Helper to find supplier IDs where customAttributes (JSON) contains a search string.
+ */
+const findIdsByCustomAttributeSearch = async (searchTerm: string, tenantId: string): Promise<string[]> => {
+    try {
+        const result = await prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM suppliers
+            WHERE tenant_id = ${tenantId}
+            AND custom_attributes::text ILIKE ${`%${searchTerm}%`}
+        `;
+        return result.map(r => r.id);
+    } catch (error) {
+        logger.error('Error in findIdsByCustomAttributeSearch', { error, searchTerm, tenantId });
+        return [];
+    }
 };
+
+export const supplierService = {
+    createSupplier,
+    querySuppliers,
+    getSupplierById,
+    updateSupplierById,
+    deleteSupplierById,
+    findIdsByCustomAttributeSearch
+};
+

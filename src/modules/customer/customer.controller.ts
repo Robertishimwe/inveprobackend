@@ -52,9 +52,15 @@ const getCustomers = catchAsync(async (req: Request, res: Response) => {
             { email: { contains: searchTerm, mode: 'insensitive' } },
             { phone: { contains: searchTerm } },
             { companyName: { contains: searchTerm, mode: 'insensitive' } },
-            // Search in customAttributes JSON field (PostgreSQL)
-            { customAttributes: { path: [], string_contains: searchTerm } },
+            { companyName: { contains: searchTerm, mode: 'insensitive' } },
         ];
+
+        // Fix for searching in customAttributes JSONB column
+        // We find IDs that match the search term in customAttributes and add them to the OR condition
+        const customAttrMatches = await customerService.findIdsByCustomAttributeSearch(searchTerm, tenantId);
+        if (customAttrMatches.length > 0) {
+            filter.OR.push({ id: { in: customAttrMatches } });
+        }
     } else {
         // Individual field filters (only apply if unified search is not used)
         if (filterParams.firstName) filter.firstName = { contains: filterParams.firstName as string, mode: 'insensitive' };

@@ -30,6 +30,11 @@ const getSuppliers = catchAsync(async (req: Request, res: Response) => {
             { email: { contains: search, mode: 'insensitive' } },
             { phone: { contains: search, mode: 'insensitive' } },
         ];
+
+        const customAttrMatches = await supplierService.findIdsByCustomAttributeSearch(search, tenantId);
+        if (customAttrMatches.length > 0) {
+            filter.OR.push({ id: { in: customAttrMatches } });
+        }
     }
 
     if (filterParams.name) filter.name = { contains: filterParams.name as string, mode: 'insensitive' };

@@ -500,11 +500,30 @@ const cancelOrderById = async (orderId: string, tenantId: string, userId: string
 };
 
 
+/**
+ * Helper to find order IDs where customAttributes (JSON) contains a search string.
+ */
+const findIdsByCustomAttributeSearch = async (searchTerm: string, tenantId: string): Promise<string[]> => {
+    try {
+        const result = await prisma.$queryRaw<{ id: string }[]>`
+            SELECT id FROM orders
+            WHERE tenant_id = ${tenantId}
+            AND custom_attributes::text ILIKE ${`%${searchTerm}%`}
+        `;
+        return result.map(r => r.id);
+    } catch (error) {
+        logger.error('Error in findIdsByCustomAttributeSearch', { error, searchTerm, tenantId });
+        return [];
+    }
+};
+
 export const orderService = {
     createOrder,
     queryOrders,
     getOrderById,
     updateOrderById,
     cancelOrderById,
-    generateOrderNumber
+    generateOrderNumber,
+    findIdsByCustomAttributeSearch
 };
+

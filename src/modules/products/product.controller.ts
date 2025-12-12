@@ -39,6 +39,11 @@ const getProducts = catchAsync(async (req: Request, res: Response) => {
             // { barcode: { contains: s, mode: 'insensitive' } }, 
             { units: { some: { barcode: { contains: s, mode: 'insensitive' } } } } // Search UOM barcodes
         ];
+
+        const customAttrMatches = await productService.findIdsByCustomAttributeSearch(s, tenantId);
+        if (customAttrMatches.length > 0) {
+            filter.OR.push({ id: { in: customAttrMatches } });
+        }
     } else {
         // Only apply specific filters if no global search (or combine them? usually specific overrides or narrows)
         // For now, let's allow specific filters to AND with search if provided, but structure below implies specific only if used.

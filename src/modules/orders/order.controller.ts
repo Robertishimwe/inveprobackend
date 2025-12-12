@@ -44,6 +44,21 @@ const getOrders = catchAsync(async (req: Request, res: Response) => {
     // Build Prisma WhereInput object, always including the tenantId
     const filter: Prisma.OrderWhereInput = { tenantId }; // Automatically scope by tenant
 
+    // Handle unified search if provided
+    if (req.query.search) {
+        const search = req.query.search as string;
+        filter.OR = [
+            { orderNumber: { contains: search, mode: 'insensitive' } },
+            // Search by customer name if possible (though difficult with relations in simple OR)
+            // { customer: { OR: [ { firstName: { contains: search } }, { lastName: { contains: search } } ] } } // Requires enabling relation filtering in schema? usually yes
+        ];
+
+        const customAttrMatches = await orderService.findIdsByCustomAttributeSearch(search, tenantId);
+        if (customAttrMatches.length > 0) {
+            filter.OR.push({ id: { in: customAttrMatches } });
+        }
+    }
+
     if (filterParams.customerId) filter.customerId = filterParams.customerId as string;
     if (filterParams.locationId) filter.locationId = filterParams.locationId as string;
     if (filterParams.userId) filter.userId = filterParams.userId as string;
